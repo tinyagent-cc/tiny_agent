@@ -109,10 +109,16 @@ struct provider_traits<anthropic> {
         if (!cfg.stop.empty()) body["stop_sequences"] = cfg.stop;
 
         json msgs = json::array();
+        std::string merged_system;
         for (auto& m : messages) {
-            if (m.role == Role::system) { body["system"] = m.text(); continue; }
+            if (m.role == Role::system) {
+                if (!merged_system.empty()) merged_system += "\n\n";
+                merged_system += m.text();
+                continue;
+            }
             msgs.push_back(message_to_json(m));
         }
+        if (!merged_system.empty()) body["system"] = merged_system;
         body["messages"] = msgs;
 
         if (!tools.empty()) {

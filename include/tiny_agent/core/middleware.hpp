@@ -75,6 +75,3 @@ auto make_middleware_stack(Mws&&... mws) {
 }
 
 } // namespace tiny_agent
-
-// Built-in middleware — individual headers under middleware/ ──────────────────
-#include "../middleware/all.hpp"

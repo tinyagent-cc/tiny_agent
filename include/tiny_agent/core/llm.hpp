@@ -148,7 +148,15 @@ public:
         }
 
         log.trace("llm", "response: " + res->body);
-        auto response = traits::parse_response(json::parse(res->body));
+
+        json parsed;
+        try {
+            parsed = json::parse(res->body);
+        } catch (const std::exception& e) {
+            throw APIError(res->status,
+                std::string(traits::name) + " returned invalid JSON: " + e.what());
+        }
+        auto response = traits::parse_response(parsed);
 
         log.debug("llm", "finish_reason=" + response.finish_reason
             + " tool_calls=" + std::to_string(response.message.tool_calls.size()));

@@ -6,16 +6,17 @@
 
 namespace tiny_agent::middleware {
 
-// Limit the number of tool calls an agent may make.  Can apply globally or to
-// a single named tool.  Inspired by LangChain's ToolCallLimitMiddleware.
+// Limit the total number of tool calls across the middleware's lifetime.
+// Can apply globally or to a single named tool.
 //
-//   run_limit      – max tool calls per invocation.
+//   limit          – max tool calls for this middleware instance's lifetime.
+//                    For per-run limits, create a fresh middleware per invocation.
 //   tool_name      – if set, only counts calls to this specific tool.
 //   exit_behavior  – "continue" strips exceeded calls with error messages;
 //                    "error" throws; "end" clears all tool calls.
 
 struct ToolCallLimitConfig {
-    int run_limit = 50;
+    int limit = 50;
     std::optional<std::string> tool_name;
     std::string exit_behavior = "continue";   // "continue" | "error" | "end"
 };
@@ -33,10 +34,10 @@ inline MiddlewareFn tool_call_limit(ToolCallLimitConfig cfg = {}) {
 
         int total = count->fetch_add(matching) + matching;
 
-        if (total > cfg.run_limit) {
+        if (total > cfg.limit) {
             if (cfg.exit_behavior == "error")
                 throw Error("Tool call limit exceeded (" +
-                            std::to_string(cfg.run_limit) + ")" +
+                            std::to_string(cfg.limit) + ")" +
                             (cfg.tool_name ? " for tool '" + *cfg.tool_name + "'" : ""));
 
             if (cfg.exit_behavior == "end") {
@@ -47,7 +48,7 @@ inline MiddlewareFn tool_call_limit(ToolCallLimitConfig cfg = {}) {
 
             // "continue" — strip only the exceeded calls, keep the rest
             if (cfg.tool_name) {
-                int allowed = cfg.run_limit - (total - matching);
+                int allowed = cfg.limit - (total - matching);
                 std::vector<ToolCall> kept;
                 int seen = 0;
                 for (auto& tc : resp.message.tool_calls) {
@@ -59,7 +60,7 @@ inline MiddlewareFn tool_call_limit(ToolCallLimitConfig cfg = {}) {
                 }
                 resp.message.tool_calls = std::move(kept);
             } else {
-                int allowed = cfg.run_limit - (total - matching);
+                int allowed = cfg.limit - (total - matching);
                 if (allowed < 0) allowed = 0;
                 resp.message.tool_calls.resize(
                     static_cast<std::size_t>(std::min(

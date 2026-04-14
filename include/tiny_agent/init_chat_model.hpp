@@ -15,6 +15,8 @@ namespace tiny_agent {
 //   "gemini:gemini-2.0-flash"       → provider=gemini,    model=gemini-2.0-flash
 //   "gpt-4o"                        → provider=openai     (auto-detected)
 //   "claude-sonnet-4-20250514"           → provider=anthropic (auto-detected)
+//   "my-custom-model"               → provider=openai     (fallback — supports
+//                                     OpenAI-compatible APIs like vLLM, Ollama)
 
 struct ModelSpec {
     std::string provider;
@@ -38,7 +40,9 @@ inline ModelSpec parse_model_string(const std::string& model_string) {
     if (starts("gemini-"))
         return {"gemini", model_string};
 
-    return {"openai", model_string};   // default provider
+    // Unrecognized prefixes fall back to OpenAI-compatible API.
+    // Use explicit "provider:model" syntax for non-OpenAI providers.
+    return {"openai", model_string};
 }
 
 // ── init_chat_model — provider-agnostic LLM factory ─────────────────────────

@@ -23,10 +23,10 @@ int main() {
 
     // ── 1. Model call limit ─────────────────────────────────────────────
     //
-    // Caps total LLM calls per run(). With run_limit=3, the agent gets
+    // Caps total LLM calls. With limit=3, the agent gets
     // 3 LLM calls then receives a graceful stop message.
     {
-        std::cout << "--- Model Call Limit (run_limit=3) ---\n";
+        std::cout << "--- Model Call Limit (limit=3) ---\n";
 
         auto agent = Agent{
             LLM<openai>{"gpt-4o-mini", key},
@@ -36,7 +36,7 @@ int main() {
                                  "Never batch multiple operations.",
                 .tools = {add_tool},
                 .middlewares = {
-                    middleware::model_call_limit({.run_limit = 3}),
+                    middleware::model_call_limit({.limit = 3}),
                 },
                 .max_iterations = 10,
             },
@@ -50,11 +50,11 @@ int main() {
 
     // ── 2. Tool call limit ──────────────────────────────────────────────
     //
-    // Caps total tool calls across all LLM responses. With run_limit=2
+    // Caps total tool calls across all LLM responses. With limit=2
     // and exit_behavior="end", tool calls beyond the limit are stripped
     // from the response, ending the loop.
     {
-        std::cout << "--- Tool Call Limit (run_limit=2, exit_behavior=end) ---\n";
+        std::cout << "--- Tool Call Limit (limit=2, exit_behavior=end) ---\n";
 
         auto agent = Agent{
             LLM<openai>{"gpt-4o-mini", key},
@@ -64,7 +64,7 @@ int main() {
                 .tools = {add_tool},
                 .middlewares = {
                     middleware::tool_call_limit({
-                        .run_limit = 2,
+                        .limit = 2,
                         .exit_behavior = "end",
                     }),
                 },
@@ -103,7 +103,7 @@ int main() {
                 .tools = {add_tool, multiply_tool},
                 .middlewares = {
                     middleware::tool_call_limit({
-                        .run_limit = 1,
+                        .limit = 1,
                         .tool_name = "multiply",
                         .exit_behavior = "end",
                     }),

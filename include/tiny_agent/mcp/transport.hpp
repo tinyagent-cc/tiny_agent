@@ -85,17 +85,22 @@ public:
     }
 
     json receive() {
-        std::string line;
-        char c;
-        while (true) {
-            auto n = ::read(from_fd_, &c, 1);
-            if (n <= 0) throw MCPError("MCP process closed");
-            if (c == '\n') break;
-            line += c;
+        constexpr int max_attempts = 1000;
+        for (int attempt = 0; attempt < max_attempts; ++attempt) {
+            std::string line;
+            char c;
+            while (true) {
+                auto n = ::read(from_fd_, &c, 1);
+                if (n <= 0) throw MCPError("MCP process closed");
+                if (c == '\n') break;
+                line += c;
+            }
+            if (line.empty()) continue;
+            try { return json::parse(line); }
+            catch (...) { continue; }
         }
-        if (line.empty()) return receive();
-        try { return json::parse(line); }
-        catch (...) { return receive(); }
+        throw MCPError("MCP transport: no valid JSON after "
+            + std::to_string(max_attempts) + " lines");
     }
 };
 

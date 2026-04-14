@@ -100,10 +100,10 @@ int main() {
                 middleware::model_retry({.max_retries = 1, .initial_delay = 300.0}),
 
                 // 6. Cap total LLM calls to prevent runaway loops
-                middleware::model_call_limit({.run_limit = 8}),
+                middleware::model_call_limit({.limit = 8}),
 
                 // 7. Cap total tool calls
-                middleware::tool_call_limit({.run_limit = 6}),
+                middleware::tool_call_limit({.limit = 6}),
 
                 // 8. Keep history bounded in chat mode
                 middleware::trim_history(20),

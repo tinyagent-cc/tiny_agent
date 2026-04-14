@@ -35,10 +35,10 @@ int main() {
                 }),
 
                 // Cap total model calls to prevent runaway loops
-                middleware::model_call_limit({.run_limit = 10}),
+                middleware::model_call_limit({.limit = 10}),
 
                 // Cap total tool calls
-                middleware::tool_call_limit({.run_limit = 5}),
+                middleware::tool_call_limit({.limit = 5}),
 
                 // Redact emails from user messages before sending to LLM
                 middleware::pii({.pii_type = "email", .strategy = "redact"}),

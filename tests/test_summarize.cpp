@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 #include <tiny_agent/core/middleware.hpp>
+#include <tiny_agent/middleware/summarize.hpp>
 
 using namespace tiny_agent;
 

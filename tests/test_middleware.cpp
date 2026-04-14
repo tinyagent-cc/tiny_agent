@@ -1,6 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 #include <tiny_agent/core/middleware.hpp>
+#include <tiny_agent/middleware/system_prompt.hpp>
+#include <tiny_agent/middleware/trim_history.hpp>
+#include <tiny_agent/middleware/retry.hpp>
 
 using namespace tiny_agent;
 

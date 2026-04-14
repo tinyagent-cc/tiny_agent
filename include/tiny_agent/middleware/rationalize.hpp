@@ -1,7 +1,42 @@
 #pragma once
 #include "../core/middleware.hpp"
+#include <utility>
 
 namespace tiny_agent::middleware {
+
+namespace detail {
+
+// RAII guard that restores a message vector on scope exit (including exceptions).
+struct MsgGuard {
+    std::vector<Message>& msgs;
+    enum class Action { restore_front, erase_front, none } action = Action::none;
+    std::string original_content;
+
+    MsgGuard(std::vector<Message>& m) : msgs(m) {}
+    MsgGuard(const MsgGuard&) = delete;
+    MsgGuard& operator=(const MsgGuard&) = delete;
+
+    void will_restore_front(std::string original) {
+        action = Action::restore_front;
+        original_content = std::move(original);
+    }
+    void will_erase_front() { action = Action::erase_front; }
+
+    ~MsgGuard() {
+        switch (action) {
+            case Action::restore_front:
+                if (!msgs.empty()) msgs.front().content = std::move(original_content);
+                break;
+            case Action::erase_front:
+                if (!msgs.empty()) msgs.erase(msgs.begin());
+                break;
+            case Action::none:
+                break;
+        }
+    }
+};
+
+} // namespace detail
 
 // ── Tool-efficiency rationalization ─────────────────────────────────────────
 //
@@ -76,18 +111,16 @@ struct Rationalize {
         auto guidance = detail::build_guidance(msgs, LargeThreshold, hints);
         if (guidance.empty()) return next(msgs);
 
+        detail::MsgGuard guard(msgs);
         if (!msgs.empty() && msgs.front().role == Role::system) {
             auto original = msgs.front().text();
             msgs.front().content = original + guidance;
-            auto resp = next(msgs);
-            msgs.front().content = std::move(original);
-            return resp;
+            guard.will_restore_front(std::move(original));
+        } else {
+            msgs.insert(msgs.begin(), Message::system(guidance));
+            guard.will_erase_front();
         }
-
-        msgs.insert(msgs.begin(), Message::system(guidance));
-        auto resp = next(msgs);
-        msgs.erase(msgs.begin());
-        return resp;
+        return next(msgs);
     }
 };
 
@@ -102,18 +135,16 @@ inline MiddlewareFn rationalize(RationalizeConfig cfg = {}) {
             msgs, cfg.large_threshold, cfg.hints);
         if (guidance.empty()) return next(msgs);
 
+        detail::MsgGuard guard(msgs);
         if (!msgs.empty() && msgs.front().role == Role::system) {
             auto original = msgs.front().text();
             msgs.front().content = original + guidance;
-            auto resp = next(msgs);
-            msgs.front().content = std::move(original);
-            return resp;
+            guard.will_restore_front(std::move(original));
+        } else {
+            msgs.insert(msgs.begin(), Message::system(guidance));
+            guard.will_erase_front();
         }
-
-        msgs.insert(msgs.begin(), Message::system(guidance));
-        auto resp = next(msgs);
-        msgs.erase(msgs.begin());
-        return resp;
+        return next(msgs);
     };
 }
 

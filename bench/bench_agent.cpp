@@ -1,6 +1,7 @@
 #include <tiny_agent/core/types.hpp>
 #include <tiny_agent/core/tool.hpp>
 #include <tiny_agent/core/middleware.hpp>
+#include <tiny_agent/middleware/all.hpp>
 #include <tiny_agent/core/log.hpp>
 #include <tiny_agent/agent.hpp>
 #include <tiny_agent/memory/store.hpp>
@@ -388,7 +389,7 @@ static std::vector<BenchResult> bench_builtin_middleware() {
 
     // ModelCallLimit
     {
-        auto mw = middleware::model_call_limit({.run_limit = 100000});
+        auto mw = middleware::model_call_limit({.limit = 100000});
         auto msgs = make_history(5);
         results.push_back(bench("ModelCallLimit (under limit)", [&] {
             auto r = mw(msgs, terminal_passthrough);
@@ -398,7 +399,7 @@ static std::vector<BenchResult> bench_builtin_middleware() {
 
     // ToolCallLimit
     {
-        auto mw = middleware::tool_call_limit({.run_limit = 100000});
+        auto mw = middleware::tool_call_limit({.limit = 100000});
         auto msgs = make_history(5);
         results.push_back(bench("ToolCallLimit (under limit)", [&] {
             auto r = mw(msgs, [](auto&) {
@@ -674,8 +675,8 @@ static std::vector<BenchResult> bench_agent_loop() {
             middleware::logging(Log{devnull, LogLevel::off}),
             middleware::trim_history(30),
             middleware::pii({.pii_type = "email", .strategy = "redact"}),
-            middleware::model_call_limit({.run_limit = 100}),
-            middleware::tool_call_limit({.run_limit = 50}),
+            middleware::model_call_limit({.limit = 100}),
+            middleware::tool_call_limit({.limit = 50}),
         };
         Agent agent{std::move(llm), AgentConfig{
             .name = "full_stack",
@@ -913,8 +914,8 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
             middleware::trim_history(20),
             middleware::logging(Log{devnull, LogLevel::off}),
             middleware::pii({.pii_type = "ip", .strategy = "redact"}),
-            middleware::model_call_limit({.run_limit = 50}),
-            middleware::tool_call_limit({.run_limit = 30}),
+            middleware::model_call_limit({.limit = 50}),
+            middleware::tool_call_limit({.limit = 30}),
         };
 
         Agent agent{std::move(llm), AgentConfig{

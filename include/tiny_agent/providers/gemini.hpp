@@ -127,14 +127,18 @@ struct provider_traits<gemini> {
         body["generationConfig"] = gen;
 
         json contents = json::array();
+        std::string merged_system;
         for (auto& m : messages) {
             if (m.role == Role::system) {
-                body["systemInstruction"] = {
-                    {"parts", json::array({{{"text", m.text()}}})}};
+                if (!merged_system.empty()) merged_system += "\n\n";
+                merged_system += m.text();
                 continue;
             }
             contents.push_back(message_to_json(m));
         }
+        if (!merged_system.empty())
+            body["systemInstruction"] = {
+                {"parts", json::array({{{"text", merged_system}}})}};
         body["contents"] = contents;
 
         if (!tools.empty()) {

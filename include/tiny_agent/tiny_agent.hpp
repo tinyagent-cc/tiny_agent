@@ -6,7 +6,8 @@
 #include "core/tool.hpp"
 #include "core/parser.hpp"
 #include "core/llm.hpp"
-#include "core/middleware.hpp"   // base types + pulls in middleware/all.hpp
+#include "core/middleware.hpp"
+#include "middleware/all.hpp"
 
 // Orchestration
 #include "agent.hpp"

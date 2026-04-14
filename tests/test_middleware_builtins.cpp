@@ -1,6 +1,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 #include <tiny_agent/core/middleware.hpp>
+#include <tiny_agent/middleware/model_call_limit.hpp>
+#include <tiny_agent/middleware/tool_call_limit.hpp>
+#include <tiny_agent/middleware/model_retry.hpp>
+#include <tiny_agent/middleware/pii.hpp>
+#include <tiny_agent/middleware/context_editing.hpp>
 
 using namespace tiny_agent;
 
@@ -21,7 +26,7 @@ static LLMResponse with_tool_calls(int n) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST_CASE("model_call_limit: allows calls under limit") {
-    auto mw = middleware::model_call_limit({.run_limit = 3});
+    auto mw = middleware::model_call_limit({.limit = 3});
     std::vector<Message> msgs = {Message::user("hi")};
     for (int i = 0; i < 3; ++i) {
         auto resp = mw(msgs, [](auto&) { return ok(); });
@@ -31,7 +36,7 @@ TEST_CASE("model_call_limit: allows calls under limit") {
 
 TEST_CASE("model_call_limit: end behavior returns message") {
     auto mw = middleware::model_call_limit(
-        {.run_limit = 1, .exit_behavior = "end"});
+        {.limit = 1, .exit_behavior = "end"});
     std::vector<Message> msgs;
 
     auto r1 = mw(msgs, [](auto&) { return ok(); });
@@ -44,7 +49,7 @@ TEST_CASE("model_call_limit: end behavior returns message") {
 
 TEST_CASE("model_call_limit: error behavior throws") {
     auto mw = middleware::model_call_limit(
-        {.run_limit = 1, .exit_behavior = "error"});
+        {.limit = 1, .exit_behavior = "error"});
     std::vector<Message> msgs;
 
     mw(msgs, [](auto&) { return ok(); });
@@ -56,7 +61,7 @@ TEST_CASE("model_call_limit: error behavior throws") {
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST_CASE("tool_call_limit: allows under limit") {
-    auto mw = middleware::tool_call_limit({.run_limit = 5});
+    auto mw = middleware::tool_call_limit({.limit = 5});
     std::vector<Message> msgs;
     auto resp = mw(msgs, [](auto&) { return with_tool_calls(3); });
     CHECK(resp.message.tool_calls.size() == 3);
@@ -64,7 +69,7 @@ TEST_CASE("tool_call_limit: allows under limit") {
 
 TEST_CASE("tool_call_limit: end clears tool calls") {
     auto mw = middleware::tool_call_limit(
-        {.run_limit = 2, .exit_behavior = "end"});
+        {.limit = 2, .exit_behavior = "end"});
     std::vector<Message> msgs;
 
     auto r1 = mw(msgs, [](auto&) { return with_tool_calls(2); });
@@ -77,7 +82,7 @@ TEST_CASE("tool_call_limit: end clears tool calls") {
 
 TEST_CASE("tool_call_limit: error throws") {
     auto mw = middleware::tool_call_limit(
-        {.run_limit = 1, .exit_behavior = "error"});
+        {.limit = 1, .exit_behavior = "error"});
     std::vector<Message> msgs;
 
     mw(msgs, [](auto&) { return with_tool_calls(1); });
@@ -87,7 +92,7 @@ TEST_CASE("tool_call_limit: error throws") {
 
 TEST_CASE("tool_call_limit: per-tool filtering") {
     auto mw = middleware::tool_call_limit(
-        {.run_limit = 2, .tool_name = "search", .exit_behavior = "end"});
+        {.limit = 2, .tool_name = "search", .exit_behavior = "end"});
     std::vector<Message> msgs;
 
     // Create a response with mixed tool calls

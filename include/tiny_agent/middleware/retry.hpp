@@ -5,6 +5,14 @@
 
 namespace tiny_agent::middleware {
 
+namespace detail {
+    inline bool is_retryable(int status_code) {
+        return status_code == 0       // transport failure (DNS, TLS, timeout)
+            || status_code == 429     // rate limit
+            || status_code >= 500;    // server error
+    }
+}
+
 template<int MaxRetries = 3, int BackoffMs = 500>
 struct Retry {
     Log log;
@@ -15,7 +23,8 @@ struct Retry {
         for (int attempt = 0; ; ++attempt) {
             try { return next(msgs); }
             catch (const APIError& e) {
-                if (attempt >= MaxRetries || e.status_code < 500) throw;
+                if (attempt >= MaxRetries || !detail::is_retryable(e.status_code))
+                    throw;
                 auto delay = BackoffMs * (1 << attempt);
                 log.warn("retry", "attempt " + std::to_string(attempt + 1)
                     + "/" + std::to_string(MaxRetries) + " failed (status="
@@ -34,7 +43,8 @@ inline MiddlewareFn retry(int max_retries = 3,
         for (int attempt = 0; ; ++attempt) {
             try { return next(msgs); }
             catch (const APIError& e) {
-                if (attempt >= max_retries || e.status_code < 500) throw;
+                if (attempt >= max_retries || !detail::is_retryable(e.status_code))
+                    throw;
                 auto delay = backoff * (1 << attempt);
                 log.warn("retry", "attempt " + std::to_string(attempt + 1)
                     + "/" + std::to_string(max_retries) + " failed (status="

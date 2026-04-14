@@ -93,21 +93,11 @@ public:
         for (auto& m : cfg_.middlewares) chain_.add(m);
     }
 
-    // ── Single-shot execution ───────────────────────────────────────────
+    // ── Core loop (shared between run and chat) ──────────────────────
 
-    std::string run(const std::string& input) {
-        log_.debug(cfg_.name, "run(\"" + input.substr(0, 120)
-            + (input.size() > 120 ? "..." : "") + "\")");
-        std::vector<Message> msgs;
-        if (!cfg_.system_prompt.empty())
-            msgs.push_back(Message::system(cfg_.system_prompt));
-        msgs.push_back(Message::user(input));
-        return run(std::move(msgs));
-    }
-
-    std::string run(std::vector<Message> msgs) {
+    std::string execute_loop(std::vector<Message>& msgs, const char* label = "run") {
         for (int i = 0; i < cfg_.max_iterations; ++i) {
-            log_.debug(cfg_.name, "iteration " + std::to_string(i + 1)
+            log_.debug(cfg_.name, std::string(label) + " iteration " + std::to_string(i + 1)
                 + "/" + std::to_string(cfg_.max_iterations)
                 + " (messages=" + std::to_string(msgs.size()) + ")");
             auto resp = call_llm(msgs);
@@ -124,8 +114,26 @@ public:
             for (auto& tr : tool_results)
                 msgs.push_back(std::move(tr));
         }
-        log_.warn(cfg_.name, "reached max iterations (" + std::to_string(cfg_.max_iterations) + ")");
-        return msgs.back().text();
+        log_.warn(cfg_.name, std::string(label) + " reached max iterations ("
+            + std::to_string(cfg_.max_iterations) + ")");
+        return "Error: agent reached maximum iterations ("
+            + std::to_string(cfg_.max_iterations) + ") without producing a final response.";
+    }
+
+    // ── Single-shot execution ───────────────────────────────────────────
+
+    std::string run(const std::string& input) {
+        log_.debug(cfg_.name, "run(\"" + input.substr(0, 120)
+            + (input.size() > 120 ? "..." : "") + "\")");
+        std::vector<Message> msgs;
+        if (!cfg_.system_prompt.empty())
+            msgs.push_back(Message::system(cfg_.system_prompt));
+        msgs.push_back(Message::user(input));
+        return run(std::move(msgs));
+    }
+
+    std::string run(std::vector<Message> msgs) {
+        return execute_loop(msgs);
     }
 
     // ── Parsed single-shot (structured output) ─────────────────────────
@@ -145,23 +153,7 @@ public:
         if (history_.empty() && !cfg_.system_prompt.empty())
             history_.push_back(Message::system(cfg_.system_prompt));
         history_.push_back(Message::user(input));
-
-        for (int i = 0; i < cfg_.max_iterations; ++i) {
-            log_.debug(cfg_.name, "chat iteration " + std::to_string(i + 1)
-                + " (history=" + std::to_string(history_.size()) + ")");
-            auto resp = call_llm(history_);
-            history_.push_back(resp.message);
-
-            if (!resp.message.has_tool_calls())
-                return resp.message.text();
-
-            log_.debug(cfg_.name, "LLM requested " + std::to_string(resp.message.tool_calls.size()) + " tool call(s)");
-            auto tool_results = execute_tools(resp.message.tool_calls);
-            for (auto& tr : tool_results)
-                history_.push_back(std::move(tr));
-        }
-        log_.warn(cfg_.name, "chat reached max iterations (" + std::to_string(cfg_.max_iterations) + ")");
-        return history_.back().text();
+        return execute_loop(history_, "chat");
     }
 
     // ── Tool management ─────────────────────────────────────────────────
