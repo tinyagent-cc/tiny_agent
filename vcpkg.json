@@ -1,0 +1,15 @@
+{
+  "name": "tiny-agent",
+  "version": "0.2.0",
+  "description": "Tiny modern C++20 header-only agent framework — template-first, zero bloat",
+  "dependencies": [
+    "nlohmann-json",
+    {
+      "name": "cpp-httplib",
+      "features": ["openssl"]
+    },
+    "doctest",
+    "libenvpp",
+    "json-schema-validator"
+  ]
+}

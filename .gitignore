@@ -1,0 +1,13 @@
+build/
+build-*/
+cmake-build-*/
+.env
+.cache/
+vcpkg_installed/
+CMakeUserPresets.json
+.DS_Store
+*.o
+*.a
+*.dylib
+*.so
+compile_commands.json
