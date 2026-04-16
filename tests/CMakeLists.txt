@@ -9,6 +9,9 @@ set(UNIT_TESTS
     test_middleware
     test_middleware_builtins
     test_init_chat_model
+    test_init_embeddings
+    test_vectorstore
+    test_retriever
     test_skills
     test_summarize
     test_rationalize

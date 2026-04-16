@@ -22,6 +22,14 @@ target_link_libraries(tiny_agent INTERFACE
 )
 target_compile_features(tiny_agent INTERFACE cxx_std_20)
 
+# --- Optional: hnswlib for HnswVectorStore ---
+option(TINY_AGENT_HNSWLIB "Enable hnswlib vector store" OFF)
+if(TINY_AGENT_HNSWLIB)
+    find_package(hnswlib CONFIG REQUIRED)
+    target_link_libraries(tiny_agent INTERFACE hnswlib::hnswlib)
+    target_compile_definitions(tiny_agent INTERFACE TINY_AGENT_HAS_HNSWLIB)
+endif()
+
 # --- Subdirectories ---
 option(TINY_AGENT_BUILD_EXAMPLES "Build examples" ON)
 option(TINY_AGENT_BUILD_TESTS    "Build tests"    ON)

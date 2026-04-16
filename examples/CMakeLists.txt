@@ -11,6 +11,7 @@ set(EXAMPLES
     10_builtin_middleware
     11_skills
     12_mcp_http
+    13_embeddings_retriever
 )
 
 foreach(ex ${EXAMPLES})

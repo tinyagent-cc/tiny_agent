@@ -11,5 +11,11 @@
     "doctest",
     "libenvpp",
     "json-schema-validator"
-  ]
+  ],
+  "features": {
+    "hnswlib": {
+      "description": "Enable hnswlib-backed HnswVectorStore for fast ANN search",
+      "dependencies": ["hnswlib"]
+    }
+  }
 }

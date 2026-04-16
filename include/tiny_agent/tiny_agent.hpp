@@ -27,11 +27,26 @@
 #include "skills/loader.hpp"
 #include "skills/registry.hpp"
 
-// Providers — include the ones you compile against:
+// Embeddings
+#include "embeddings/core.hpp"
+
+// Vector stores
+#include "vectorstore/base.hpp"
+#include "vectorstore/flat.hpp"
+
+// Retriever
+#include "retriever.hpp"
+
+// Chat providers — include the ones you compile against:
 // #include "providers/openai.hpp"
 // #include "providers/anthropic.hpp"
 // #include "providers/gemini.hpp"
 // #include "providers/local.hpp"
 //
-// Or use the provider-agnostic factory (includes all providers):
+// Or use the provider-agnostic factories (include all providers):
 // #include "init_chat_model.hpp"
+// #include "init_embeddings.hpp"
+//
+// Optional vector stores (require additional dependencies):
+// #include "vectorstore/hnswlib.hpp"   // needs hnswlib
+// #include "vectorstore/qdrant.hpp"    // needs running Qdrant server
