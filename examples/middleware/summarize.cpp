@@ -20,8 +20,8 @@ int main() {
     {
         std::cout << "--- Part 1: Extractive Summarization (no extra LLM calls) ---\n";
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "extractive",
                 .system_prompt = "You are a knowledgeable assistant. Give detailed answers.",
@@ -64,7 +64,7 @@ int main() {
     {
         std::cout << "--- Part 2: LLM-backed Summarization ---\n";
 
-        auto sum_llm = std::make_shared<LLM<openai>>(
+        auto sum_llm = std::make_shared<OpenAIChat>(
             std::string("gpt-4o-mini"), LLMConfig{.api_key = key});
 
         middleware::SummarizerFn llm_summarizer =
@@ -84,8 +84,8 @@ int main() {
                 return resp.message.text();
             };
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "llm_summarize",
                 .system_prompt = "You are a science tutor. Give thorough explanations.",

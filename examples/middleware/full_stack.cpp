@@ -29,13 +29,13 @@ int main() {
               << "  model_call_limit, tool_call_limit, model_retry,\n"
               << "  context_editing, rationalize, retry\n\n";
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "full_stack",
             // No system_prompt here — middleware injects one.
             .tools = {
-                Tool::create("exec", "Run a shell command",
+                DynamicTool::create("exec", "Run a shell command",
                     [](const json& p) -> json {
                         return shell_exec(p["command"].get<std::string>());
                     },
@@ -44,7 +44,7 @@ int main() {
                                                    {"description", "Shell command"}}}}},
                      {"required", {"command"}}}),
 
-                Tool::create("word_count", "Count words in text",
+                DynamicTool::create("word_count", "Count words in text",
                     [](const json& p) -> json {
                         auto text = p["text"].get<std::string>();
                         int words = 0;
@@ -63,7 +63,7 @@ int main() {
                      {"properties", {{"text", {{"type", "string"}}}}},
                      {"required", {"text"}}}),
 
-                Tool::create("lookup", "Look up information on a topic",
+                DynamicTool::create("lookup", "Look up information on a topic",
                     [](const json& p) -> json {
                         auto topic = p["topic"].get<std::string>();
                         // Simulated knowledge base with substantial content

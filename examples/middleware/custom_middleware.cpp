@@ -94,8 +94,8 @@ int main() {
 
     // ── Compose all custom middleware ────────────────────────────────────
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "custom_demo",
             .system_prompt = "You are a helpful assistant. Reply concisely.",

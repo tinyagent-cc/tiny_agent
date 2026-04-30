@@ -10,8 +10,8 @@ int main() {
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
     // No .system_prompt in AgentConfig — the middleware injects one.
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "pirate",
             .middlewares = {

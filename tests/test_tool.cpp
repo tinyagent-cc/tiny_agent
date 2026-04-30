@@ -4,8 +4,8 @@
 
 using namespace tiny_agent;
 
-TEST_CASE("Tool creation and invocation") {
-    auto tool = Tool::create("add", "Add two numbers",
+TEST_CASE("DynamicTool creation and invocation") {
+    auto tool = DynamicTool::create("add", "Add two numbers",
         [](const json& p) -> json {
             return p["a"].get<int>() + p["b"].get<int>();
         },
@@ -18,17 +18,17 @@ TEST_CASE("Tool creation and invocation") {
     CHECK(result.get<int>() == 7);
 }
 
-TEST_CASE("Tool with no handler throws") {
-    Tool empty{{"empty", "no handler", {}}, nullptr};
+TEST_CASE("DynamicTool with no handler throws") {
+    DynamicTool empty{{"empty", "no handler", {}}, nullptr};
     CHECK_THROWS_AS(empty(json::object()), ToolError);
 }
 
 TEST_CASE("ToolRegistry") {
     ToolRegistry reg;
 
-    reg.add(Tool::create("mul", "Multiply",
+    reg.add(DynamicTool::create("mul", "Multiply",
         [](const json& p) -> json { return p["a"].get<int>() * p["b"].get<int>(); }));
-    reg.add(Tool::create("neg", "Negate",
+    reg.add(DynamicTool::create("neg", "Negate",
         [](const json& p) -> json { return -p["x"].get<int>(); }));
 
     CHECK(reg.size() == 2);
@@ -44,8 +44,8 @@ TEST_CASE("ToolRegistry") {
     CHECK_THROWS_AS(reg.execute("div", {}), ToolError);
 }
 
-TEST_CASE("Tool::create respects std::invocable concept") {
-    auto tool = Tool::create("greet", "Say hello",
+TEST_CASE("DynamicTool::create respects std::invocable concept") {
+    auto tool = DynamicTool::create("greet", "Say hello",
         [](const json& p) -> json {
             return "Hello, " + p["name"].get<std::string>() + "!";
         });

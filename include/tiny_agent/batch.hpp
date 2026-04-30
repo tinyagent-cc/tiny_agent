@@ -6,8 +6,6 @@
 
 namespace tiny_agent::batch {
 
-// ── Result for a single item in the batch ───────────────────────────────────
-
 struct ItemResult {
     std::size_t index;
     std::string input;
@@ -18,14 +16,6 @@ struct ItemResult {
     bool ok() const { return output.has_value(); }
     explicit operator bool() const { return ok(); }
 };
-
-// ── Lifecycle hooks ─────────────────────────────────────────────────────────
-//
-//  interceptor  — transform input before processing; return nullopt to skip.
-//  on_success   — called after each successful run.
-//  on_error     — called on each failed attempt; return true to retry
-//                 (only retries if attempts remain per Config::max_retries).
-//  on_failure   — called once an item permanently fails.
 
 struct Hooks {
     std::function<std::optional<std::string>(std::size_t index, const std::string& input)>
@@ -42,20 +32,16 @@ struct Hooks {
         on_failure;
 };
 
-// ── Batch configuration ─────────────────────────────────────────────────────
-
 struct Config {
     int max_retries = 0;
     std::chrono::milliseconds retry_delay{500};
     bool stop_on_failure = false;
 };
 
-// ── Internal: process one item with full hook/retry lifecycle ────────────────
-
 namespace detail {
 
-template<llm_like LLMType>
-ItemResult process_one(Agent<LLMType>& agent, std::size_t index,
+template<is_chat LLMType>
+ItemResult process_one(AgentExecutor<deep_agent_tag, LLMType>& agent, std::size_t index,
                        const std::string& raw_input,
                        const Config& cfg, const Hooks& hooks, const Log& log) {
     std::string input = raw_input;
@@ -102,10 +88,8 @@ ItemResult process_one(Agent<LLMType>& agent, std::size_t index,
 
 } // namespace detail
 
-// ── Eager batch — process all inputs, return collected results ───────────────
-
-template<llm_like LLMType>
-std::vector<ItemResult> run(Agent<LLMType>& agent,
+template<is_chat LLMType>
+std::vector<ItemResult> run(AgentExecutor<deep_agent_tag, LLMType>& agent,
                             const std::vector<std::string>& inputs,
                             Config config = {}, Hooks hooks = {},
                             Log log = {}) {
@@ -132,11 +116,9 @@ std::vector<ItemResult> run(Agent<LLMType>& agent,
     return results;
 }
 
-// ── Lazy iterator — process items one at a time on demand ───────────────────
-
-template<llm_like LLMType>
+template<is_chat LLMType>
 class Iterator {
-    Agent<LLMType>* agent_;
+    AgentExecutor<deep_agent_tag, LLMType>* agent_;
     std::vector<std::string> inputs_;
     Config  config_;
     Hooks   hooks_;
@@ -144,7 +126,7 @@ class Iterator {
     std::size_t pos_ = 0;
 
 public:
-    Iterator(Agent<LLMType>& agent, std::vector<std::string> inputs,
+    Iterator(AgentExecutor<deep_agent_tag, LLMType>& agent, std::vector<std::string> inputs,
              Config config = {}, Hooks hooks = {}, Log log = {})
         : agent_(&agent), inputs_(std::move(inputs))
         , config_(std::move(config)), hooks_(std::move(hooks))
@@ -174,8 +156,6 @@ public:
         }
         return results;
     }
-
-    // ── Range-for support ───────────────────────────────────────────────
 
     class Cursor {
         Iterator* parent_ = nullptr;
@@ -208,18 +188,14 @@ public:
     std::default_sentinel_t end() const { return {}; }
 };
 
-// ── Factory ─────────────────────────────────────────────────────────────────
-
-template<llm_like LLMType>
-Iterator<LLMType> iterate(Agent<LLMType>& agent,
+template<is_chat LLMType>
+Iterator<LLMType> iterate(AgentExecutor<deep_agent_tag, LLMType>& agent,
                           std::vector<std::string> inputs,
                           Config config = {}, Hooks hooks = {},
                           Log log = {}) {
     return {agent, std::move(inputs), std::move(config),
             std::move(hooks), std::move(log)};
 }
-
-// ── Summary helper ──────────────────────────────────────────────────────────
 
 struct Summary {
     std::size_t total     = 0;

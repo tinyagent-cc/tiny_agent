@@ -62,7 +62,7 @@ TEST_CASE("edge: colon-only is treated as non-provider") {
 
 // ── init_chat_model construction (offline — just verifies it compiles) ──────
 
-TEST_CASE("init_chat_model returns AnyLLM (openai)") {
+TEST_CASE("init_chat_model returns AnyChat (openai)") {
     // We can't actually call chat() without a valid key, but we can verify
     // the factory selects the right provider by checking model_name().
     auto llm = init_chat_model("openai:gpt-4o-mini",
@@ -70,13 +70,13 @@ TEST_CASE("init_chat_model returns AnyLLM (openai)") {
     CHECK(llm.model_name() == "gpt-4o-mini");
 }
 
-TEST_CASE("init_chat_model returns AnyLLM (anthropic)") {
+TEST_CASE("init_chat_model returns AnyChat (anthropic)") {
     auto llm = init_chat_model("anthropic:claude-sonnet-4-20250514",
                                LLMConfig{.api_key = "fake-key"});
     CHECK(llm.model_name() == "claude-sonnet-4-20250514");
 }
 
-TEST_CASE("init_chat_model returns AnyLLM (gemini)") {
+TEST_CASE("init_chat_model returns AnyChat (gemini)") {
     auto llm = init_chat_model("gemini:gemini-2.0-flash",
                                LLMConfig{.api_key = "fake-key"});
     CHECK(llm.model_name() == "gemini-2.0-flash");

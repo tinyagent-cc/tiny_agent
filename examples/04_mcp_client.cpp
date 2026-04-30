@@ -25,8 +25,8 @@ int main(int argc, char* argv[]) {
     for (auto& t : tools)
         std::cout << "  - " << t.schema.name << ": " << t.schema.description << "\n";
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "mcp_agent",
             .system_prompt = "You are a helpful assistant with access to external tools via MCP.",

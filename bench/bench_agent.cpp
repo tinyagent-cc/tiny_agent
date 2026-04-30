@@ -1,5 +1,6 @@
 #include <tiny_agent/core/types.hpp>
 #include <tiny_agent/core/tool.hpp>
+#include <tiny_agent/core/runnable.hpp>
 #include <tiny_agent/core/middleware.hpp>
 #include <tiny_agent/middleware/all.hpp>
 #include <tiny_agent/core/log.hpp>
@@ -106,12 +107,20 @@ static void print_results(const std::vector<BenchResult>& results) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 struct MockLLM {
+    using input_t   = std::string;
+    using output_t  = std::string;
+    using model_tag = chat_tag;
+
     std::string model = "mock-7b";
     int call_count = 0;
-    int tool_calls_to_emit = 0; // how many tool calls to generate per response
+    int tool_calls_to_emit = 0;
+
+    std::string invoke(const std::string&, const RunConfig& = {}) {
+        return "The answer is 42.";
+    }
 
     LLMResponse chat(const std::vector<Message>&,
-                     const std::vector<ToolSchema>& tools) {
+                     const std::vector<ToolSchema>& tools = {}) {
         ++call_count;
 
         if (tool_calls_to_emit > 0 && !tools.empty() && call_count == 1) {
@@ -131,10 +140,20 @@ struct MockLLM {
                 "stop", {}};
     }
 
-    std::string_view model_name() const { return model; }
+    std::string model_name() const { return model; }
+    float temperature() const { return 0.7f; }
+
+    std::vector<std::string> batch(std::vector<std::string> inputs, const RunConfig& cfg = {}) {
+        std::vector<std::string> out;
+        for (auto& in : inputs) out.push_back(invoke(in, cfg));
+        return out;
+    }
+    void stream(std::string input, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
+        cb(invoke(input, cfg));
+    }
 };
 
-static_assert(llm_like<MockLLM>);
+static_assert(is_chat<MockLLM>);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helper: generate realistic conversation histories
@@ -180,7 +199,7 @@ static std::vector<BenchResult> bench_tool_registry() {
     std::cout << "=== TOOL REGISTRY ===\n";
 
     auto make_tool = [](const std::string& name) {
-        return Tool::create(name, "desc for " + name,
+        return DynamicTool::create(name, "desc for " + name,
             [](const json& args) -> json {
                 return json{{"result", args.value("x", 0) + args.value("y", 0)}};
             },
@@ -209,7 +228,7 @@ static std::vector<BenchResult> bench_tool_registry() {
         (void)r;
     }));
 
-    // Tool::create overhead
+    // DynamicTool::create overhead
     results.push_back(bench("tool_create", [&] {
         auto t = make_tool("dynamic_tool");
         (void)t;
@@ -226,7 +245,7 @@ static std::vector<BenchResult> bench_tool_registry() {
     }
 
     // Realistic tool: JSON parsing + string processing
-    auto json_tool = Tool::create("parse_sensor", "Parse sensor payload",
+    auto json_tool = DynamicTool::create("parse_sensor", "Parse sensor payload",
         [](const json& args) -> json {
             auto data = args.value("payload", "{}");
             auto parsed = json::parse(data);
@@ -537,7 +556,7 @@ static std::vector<BenchResult> bench_memory() {
     // Cached tool wrapper
     {
         int call_count = 0;
-        auto raw_tool = Tool::create("compute", "heavy compute",
+        auto raw_tool = DynamicTool::create("compute", "heavy compute",
             [&](const json& args) -> json {
                 ++call_count;
                 return json{{"result", args.value("x", 0) * args.value("x", 0)}};
@@ -551,7 +570,7 @@ static std::vector<BenchResult> bench_memory() {
             (void)r;
         }));
 
-        auto uncached = Tool::create("compute2", "uncached",
+        auto uncached = DynamicTool::create("compute2", "uncached",
             [](const json& args) -> json {
                 return json{{"result", args.value("x", 0) * args.value("x", 0)}};
             });
@@ -574,7 +593,7 @@ static std::vector<BenchResult> bench_agent_loop() {
     std::cout << "=== AGENT LOOP (MockLLM) ===\n";
 
     auto make_math_tool = [](const std::string& name, auto op) {
-        return Tool::create(name, name + " two numbers",
+        return DynamicTool::create(name, name + " two numbers",
             [op](const json& args) -> json {
                 return json{{"result", op(args.value("x", 0), args.value("y", 0))}};
             },
@@ -586,7 +605,7 @@ static std::vector<BenchResult> bench_agent_loop() {
     // Simple run: no tools, no middleware
     {
         MockLLM llm;
-        Agent agent{std::move(llm), AgentConfig{.name = "bare"}};
+        AgentExecutor agent{std::move(llm), AgentConfig{.name = "bare"}};
         results.push_back(bench("agent.run (no tools, no mw)", [&] {
             auto r = agent.run("What is 2+2?");
             (void)r;
@@ -598,7 +617,7 @@ static std::vector<BenchResult> bench_agent_loop() {
         MockLLM llm;
         llm.tool_calls_to_emit = 1;
         auto tool = make_math_tool("add", [](int a, int b) { return a + b; });
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "single_tool",
             .tools = {tool},
             .max_iterations = 5}};
@@ -613,12 +632,12 @@ static std::vector<BenchResult> bench_agent_loop() {
     {
         MockLLM llm;
         llm.tool_calls_to_emit = 3;
-        auto tools = std::vector<Tool>{
+        auto tools = std::vector<DynamicTool>{
             make_math_tool("add", [](int a, int b) { return a + b; }),
             make_math_tool("mul", [](int a, int b) { return a * b; }),
             make_math_tool("sub", [](int a, int b) { return a - b; }),
         };
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "multi_tool",
             .tools = tools,
             .max_iterations = 5}};
@@ -633,7 +652,7 @@ static std::vector<BenchResult> bench_agent_loop() {
     {
         MockLLM llm;
         std::ostringstream devnull;
-        auto tools = std::vector<Tool>{
+        auto tools = std::vector<DynamicTool>{
             make_math_tool("add", [](int a, int b) { return a + b; }),
         };
         auto mws = std::vector<MiddlewareFn>{
@@ -641,7 +660,7 @@ static std::vector<BenchResult> bench_agent_loop() {
             middleware::trim_history(20),
             middleware::logging(Log{devnull, LogLevel::off}),
         };
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "mw_agent",
             .tools = tools,
             .middlewares = mws,
@@ -658,10 +677,10 @@ static std::vector<BenchResult> bench_agent_loop() {
         MockLLM llm;
         llm.tool_calls_to_emit = 2;
         std::ostringstream devnull;
-        auto tools = std::vector<Tool>{
+        auto tools = std::vector<DynamicTool>{
             make_math_tool("add", [](int a, int b) { return a + b; }),
             make_math_tool("mul", [](int a, int b) { return a * b; }),
-            Tool::create("read_sensor", "Read IoT sensor",
+            DynamicTool::create("read_sensor", "Read IoT sensor",
                 [](const json& args) -> json {
                     return json{{"temp", 23.5 + args.value("pin", 0) * 0.1},
                                 {"humidity", 67.2}};
@@ -678,7 +697,7 @@ static std::vector<BenchResult> bench_agent_loop() {
             middleware::model_call_limit({.limit = 100}),
             middleware::tool_call_limit({.limit = 50}),
         };
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "full_stack",
             .tools = tools,
             .middlewares = mws,
@@ -693,7 +712,7 @@ static std::vector<BenchResult> bench_agent_loop() {
     // Chat: multi-turn conversation
     {
         MockLLM llm;
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "chat_agent",
             .system_prompt = "IoT chat assistant"}};
         results.push_back(bench("agent.chat (10 turns)", [&] {
@@ -802,7 +821,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
     {
         MockLLM llm;
         llm.tool_calls_to_emit = 1;
-        auto gpio_tool = Tool::create("read_gpio", "Read GPIO pin state",
+        auto gpio_tool = DynamicTool::create("read_gpio", "Read GPIO pin state",
             [](const json& args) -> json {
                 auto pin = args.value("pin", 0);
                 return json{{"pin", pin}, {"state", pin % 2 == 0}, {"voltage", 3.3}};
@@ -811,7 +830,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
                  {"properties", {{"pin", {{"type", "integer"}}}}},
                  {"required", {"pin"}}});
 
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "gpio_monitor",
             .system_prompt = "Monitor GPIO pins. Report state changes.",
             .tools = {gpio_tool},
@@ -828,15 +847,15 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
     {
         MockLLM llm;
         llm.tool_calls_to_emit = 5;
-        std::vector<Tool> sensor_tools;
+        std::vector<DynamicTool> sensor_tools;
         for (auto name : {"temp", "humidity", "pressure", "light", "motion"}) {
-            sensor_tools.push_back(Tool::create(
+            sensor_tools.push_back(DynamicTool::create(
                 std::string("read_") + name, std::string("Read ") + name + " sensor",
                 [](const json&) -> json {
                     return json{{"value", 23.5}, {"unit", "C"}, {"timestamp", 1234567890}};
                 }));
         }
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "sensor_agg",
             .system_prompt = "Aggregate all sensor readings.",
             .tools = sensor_tools,
@@ -853,7 +872,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
     {
         MockLLM llm;
         std::ostringstream devnull;
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "chat_managed",
             .system_prompt = "IoT device assistant.",
             .middlewares = {
@@ -877,7 +896,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
             middleware::pii({.pii_type = "ip", .strategy = "redact"}),
             middleware::pii({.pii_type = "phone", .strategy = "redact"}),
         };
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "pii_safe",
             .middlewares = mws,
             .max_iterations = 2}};
@@ -894,16 +913,16 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
         llm.tool_calls_to_emit = 2;
         std::ostringstream devnull;
 
-        auto tools = std::vector<Tool>{
-            Tool::create("read_sensor", "Read sensor",
+        auto tools = std::vector<DynamicTool>{
+            DynamicTool::create("read_sensor", "Read sensor",
                 [](const json& args) -> json {
                     return json{{"temp", 23.5 + args.value("pin", 0) * 0.1}};
                 }),
-            Tool::create("write_gpio", "Write GPIO",
+            DynamicTool::create("write_gpio", "Write GPIO",
                 [](const json& args) -> json {
                     return json{{"ok", true}, {"pin", args.value("pin", 0)}};
                 }),
-            Tool::create("system_info", "Get system info",
+            DynamicTool::create("system_info", "Get system info",
                 [](const json&) -> json {
                     return json{{"cpu_temp", 55.2}, {"mem_free_mb", 412},
                                 {"uptime_s", 86400}, {"load", 0.35}};
@@ -918,7 +937,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
             middleware::tool_call_limit({.limit = 30}),
         };
 
-        Agent agent{std::move(llm), AgentConfig{
+        AgentExecutor agent{std::move(llm), AgentConfig{
             .name = "embedded_prod",
             .tools = tools,
             .middlewares = mws,

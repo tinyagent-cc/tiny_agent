@@ -11,7 +11,7 @@ int main() {
 
     std::cout << "=== Call Limits Middleware Demo ===\n\n";
 
-    auto add_tool = Tool::create("add", "Add two numbers",
+    auto add_tool = DynamicTool::create("add", "Add two numbers",
         [](const json& p) -> json {
             double a = p["a"].get<double>(), b = p["b"].get<double>();
             std::cout << "  [tool] add(" << a << ", " << b << ") = " << (a + b) << "\n";
@@ -28,8 +28,8 @@ int main() {
     {
         std::cout << "--- Model Call Limit (limit=3) ---\n";
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "limited",
                 .system_prompt = "You are a math assistant. Perform exactly ONE addition per step. "
@@ -56,8 +56,8 @@ int main() {
     {
         std::cout << "--- Tool Call Limit (limit=2, exit_behavior=end) ---\n";
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "tool_limited",
                 .system_prompt = "You are a math assistant. Perform one addition per step.",
@@ -85,7 +85,7 @@ int main() {
     {
         std::cout << "--- Tool Call Limit (per-tool: max 1 'multiply') ---\n";
 
-        auto multiply_tool = Tool::create("multiply", "Multiply two numbers",
+        auto multiply_tool = DynamicTool::create("multiply", "Multiply two numbers",
             [](const json& p) -> json {
                 double a = p["a"].get<double>(), b = p["b"].get<double>();
                 std::cout << "  [tool] multiply(" << a << ", " << b << ") = " << (a * b) << "\n";
@@ -95,8 +95,8 @@ int main() {
              {"properties", {{"a", {{"type", "number"}}}, {"b", {{"type", "number"}}}}},
              {"required", {"a", "b"}}});
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "per_tool",
                 .system_prompt = "You are a math assistant. Perform one operation per step.",

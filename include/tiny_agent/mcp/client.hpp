@@ -113,12 +113,12 @@ public:
         return result;
     }
 
-    std::vector<Tool> as_tools() {
+    std::vector<DynamicTool> as_tools() {
         auto schemas = list_tools();
-        std::vector<Tool> out;
+        std::vector<DynamicTool> out;
         for (auto& s : schemas) {
             auto name = s.name;
-            out.push_back(Tool{
+            out.push_back(DynamicTool{
                 std::move(s),
                 [this, name](const json& args) -> json {
                     return call_tool(name, args);
@@ -131,8 +131,6 @@ public:
     [[nodiscard]] Log& log() { return log_; }
     [[nodiscard]] const Log& log() const { return log_; }
 };
-
-// ── CTAD ────────────────────────────────────────────────────────────────────
 
 template<transport_like T>
 Client(T) -> Client<T>;

@@ -1,5 +1,5 @@
 #pragma once
-#include "embeddings/core.hpp"
+#include "core/model.hpp"
 #include "vectorstore/base.hpp"
 #include "vectorstore/flat.hpp"
 #include "core/tool.hpp"
@@ -7,41 +7,20 @@
 
 namespace tiny_agent {
 
-// ── Retriever<StoreType> — VectorStore + Embeddings, exposable as Agent Tool ─
-//
-// Owns a vector store and an AnyEmbeddings model.  Provides add_documents()
-// to populate the store and query() to search it.  as_tool() returns a Tool
-// that an Agent can call.
-//
-// Template parameter StoreType must satisfy vector_store.  Defaults to
-// FlatVectorStore (brute-force cosine similarity, zero deps).
-//
-// Lifetime: the Tool returned by as_tool() captures `this`.  The Retriever
-// must outlive any Tool (or Agent holding that Tool) created from it.
-// For shared-ownership scenarios, use retriever_as_tool() with shared_ptr.
-//
-//   auto r = Retriever{init_embeddings("text-embedding-3-small", cfg)};
-//   r.add_documents({"doc1", "doc2"});
-//   auto tool = r.as_tool("search", "Search knowledge base");
-//
-//   // With a different store:
-//   auto r2 = Retriever<HnswVectorStore>{
-//       HnswVectorStore{1536, 10000}, init_embeddings(...)};
-
-template<vector_store StoreType = FlatVectorStore>
+template<is_embedding EmbeddingType, vector_store StoreType = FlatVectorStore>
 class Retriever {
     StoreType      store_;
-    AnyEmbeddings  embeddings_;
+    EmbeddingType  embeddings_;
     int            default_top_k_;
     Log            log_;
 
 public:
-    Retriever(AnyEmbeddings embeddings, int top_k = 4, Log log = {})
+    Retriever(EmbeddingType embeddings, int top_k = 4, Log log = {})
         : embeddings_(std::move(embeddings))
         , default_top_k_(top_k)
         , log_(log) {}
 
-    Retriever(StoreType store, AnyEmbeddings embeddings,
+    Retriever(StoreType store, EmbeddingType embeddings,
               int top_k = 4, Log log = {})
         : store_(std::move(store))
         , embeddings_(std::move(embeddings))
@@ -74,10 +53,8 @@ public:
     StoreType&       store()       { return store_; }
     const StoreType& store() const { return store_; }
 
-    // ── Expose as Agent tool (captures this — ensure Retriever outlives Tool) ──
-
-    Tool as_tool(std::string name, std::string description) {
-        return Tool::create(std::move(name), std::move(description),
+    DynamicTool as_tool(std::string name, std::string description) {
+        return DynamicTool::create(std::move(name), std::move(description),
             [this](const json& args) -> json {
                 auto q = args.at("query").get<std::string>();
                 int k  = args.value("top_k", default_top_k_);
@@ -103,25 +80,25 @@ public:
     }
 };
 
-// ── CTAD guides ─────────────────────────────────────────────────────────────
+// CTAD guides
+template<is_embedding E>
+Retriever(E, int, Log) -> Retriever<E, FlatVectorStore>;
+template<is_embedding E>
+Retriever(E, int)      -> Retriever<E, FlatVectorStore>;
+template<is_embedding E>
+Retriever(E)           -> Retriever<E, FlatVectorStore>;
 
-Retriever(AnyEmbeddings, int, Log) -> Retriever<FlatVectorStore>;
-Retriever(AnyEmbeddings, int)      -> Retriever<FlatVectorStore>;
-Retriever(AnyEmbeddings)           -> Retriever<FlatVectorStore>;
+template<is_embedding E, vector_store S>
+Retriever(S, E, int, Log) -> Retriever<E, S>;
+template<is_embedding E, vector_store S>
+Retriever(S, E, int)      -> Retriever<E, S>;
+template<is_embedding E, vector_store S>
+Retriever(S, E)           -> Retriever<E, S>;
 
-template<vector_store S>
-Retriever(S, AnyEmbeddings, int, Log) -> Retriever<S>;
-template<vector_store S>
-Retriever(S, AnyEmbeddings, int)      -> Retriever<S>;
-template<vector_store S>
-Retriever(S, AnyEmbeddings)           -> Retriever<S>;
-
-// ── retriever_as_tool — shared_ptr ownership for safe nesting ────────────────
-
-template<vector_store StoreType>
-Tool retriever_as_tool(std::shared_ptr<Retriever<StoreType>> retriever,
-                       std::string name, std::string description) {
-    return Tool::create(std::move(name), std::move(description),
+template<is_embedding EmbeddingType, vector_store StoreType>
+DynamicTool retriever_as_tool(std::shared_ptr<Retriever<EmbeddingType, StoreType>> retriever,
+                              std::string name, std::string description) {
+    return DynamicTool::create(std::move(name), std::move(description),
         [ret = std::move(retriever)](const json& args) -> json {
             auto q = args.at("query").get<std::string>();
             int k  = args.value("top_k", 4);

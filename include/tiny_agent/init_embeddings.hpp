@@ -1,25 +1,15 @@
 #pragma once
-#include "embeddings/core.hpp"
-#include "embeddings/openai.hpp"
-#include "embeddings/gemini.hpp"
-#include "embeddings/mistral.hpp"
-#include "embeddings/cohere.hpp"
-#include "embeddings/voyageai.hpp"
+#include "core/model.hpp"
+#include "providers/openai.hpp"
+#include "providers/gemini.hpp"
+#include "providers/mistral.hpp"
+#include "providers/cohere.hpp"
+#include "providers/voyageai.hpp"
 
 namespace tiny_agent {
 
-// ── Embedding model-string parsing ───────────────────────────────────────────
-//
-// Accepts "provider:model" (explicit) or just "model" (auto-detected).
-//   "openai:text-embedding-3-small"  → provider=openai
-//   "gemini:text-embedding-004"      → provider=gemini
-//   "mistral:mistral-embed"          → provider=mistral
-//   "cohere:embed-v4"                → provider=cohere
-//   "voyageai:voyage-4"              → provider=voyageai
-//   "text-embedding-3-small"         → provider=openai  (auto-detected)
-//   "mistral-embed"                  → provider=mistral (auto-detected)
-//   "my-custom-model"                → provider=openai  (fallback — supports
-//                                      OpenAI-compatible APIs like vLLM, Ollama)
+using AnyEmbedding = EmbeddingVariant<OpenAI, Gemini, Mistral, Cohere, VoyageAI>;
+static_assert(is_embedding<AnyEmbedding>);
 
 struct EmbeddingModelSpec {
     std::string provider;
@@ -46,37 +36,28 @@ inline EmbeddingModelSpec parse_embedding_model_string(const std::string& model_
     return {"openai", model_string};
 }
 
-// ── init_embeddings — provider-agnostic embedding factory ────────────────────
-//
-// Returns AnyEmbeddings (type-erased) so the caller doesn't need to know the
-// concrete provider at compile time.  Mirrors LangChain's init_embeddings().
-//
-//   auto emb = init_embeddings("openai:text-embedding-3-small",
-//       EmbeddingConfig{.api_key = getenv("OPENAI_API_KEY")});
-
-inline AnyEmbeddings init_embeddings(const std::string& model_string,
-                                     EmbeddingConfig config = {}) {
+inline AnyEmbedding init_embeddings(const std::string& model_string,
+                                    EmbeddingConfig config = {}) {
     auto [provider, model] = parse_embedding_model_string(model_string);
 
     if (provider == "openai")
-        return AnyEmbeddings{Embeddings<openai>{model, std::move(config)}};
+        return AnyEmbedding{LLMModel<OpenAI, embedding_tag>{model, std::move(config)}};
     if (provider == "gemini")
-        return AnyEmbeddings{Embeddings<gemini>{model, std::move(config)}};
+        return AnyEmbedding{LLMModel<Gemini, embedding_tag>{model, std::move(config)}};
     if (provider == "mistral")
-        return AnyEmbeddings{Embeddings<mistral>{model, std::move(config)}};
+        return AnyEmbedding{LLMModel<Mistral, embedding_tag>{model, std::move(config)}};
     if (provider == "cohere")
-        return AnyEmbeddings{Embeddings<cohere>{model, std::move(config)}};
+        return AnyEmbedding{LLMModel<Cohere, embedding_tag>{model, std::move(config)}};
     if (provider == "voyageai")
-        return AnyEmbeddings{Embeddings<voyageai>{model, std::move(config)}};
+        return AnyEmbedding{LLMModel<VoyageAI, embedding_tag>{model, std::move(config)}};
 
     throw Error("init_embeddings: unknown provider '" + provider +
                 "' (supported: openai, gemini, mistral, cohere, voyageai)");
 }
 
-// Convenience: create from explicit provider + model strings.
-inline AnyEmbeddings init_embeddings(const std::string& provider,
-                                     const std::string& model,
-                                     EmbeddingConfig config = {}) {
+inline AnyEmbedding init_embeddings(const std::string& provider,
+                                    const std::string& model,
+                                    EmbeddingConfig config = {}) {
     return init_embeddings(provider + ":" + model, std::move(config));
 }
 

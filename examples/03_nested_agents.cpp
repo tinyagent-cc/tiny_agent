@@ -12,7 +12,7 @@ int main() {
     LLMConfig cfg{.api_key = key};
 
     auto researcher = make_shared_agent(
-        LLM<openai>{"gpt-4o-mini", cfg},
+        OpenAIChat{"gpt-4o-mini", cfg},
         AgentConfig{
             .name = "researcher",
             .system_prompt = "You are a researcher. Provide factual, concise answers.",
@@ -20,7 +20,7 @@ int main() {
     );
 
     auto writer = make_shared_agent(
-        LLM<openai>{"gpt-4o-mini", cfg},
+        OpenAIChat{"gpt-4o-mini", cfg},
         AgentConfig{
             .name = "writer",
             .system_prompt = "You are a creative writer. Take research notes and produce a short, engaging paragraph.",
@@ -28,7 +28,7 @@ int main() {
     );
 
     auto manager = make_shared_agent(
-        LLM<openai>{"gpt-4o", cfg},
+        OpenAIChat{"gpt-4o", cfg},
         AgentConfig{
             .name = "manager",
             .system_prompt = "You are a project manager. Delegate research to 'researcher' and writing to 'writer'. "

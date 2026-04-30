@@ -26,8 +26,8 @@ int main() {
         return next(msgs);
     };
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "guarded_agent",
             .system_prompt = "You are a helpful assistant.",

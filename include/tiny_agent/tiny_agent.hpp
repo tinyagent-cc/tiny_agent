@@ -5,7 +5,8 @@
 #include "core/log.hpp"
 #include "core/tool.hpp"
 #include "core/parser.hpp"
-#include "core/llm.hpp"
+#include "core/model.hpp"
+#include "core/runnable.hpp"
 #include "core/middleware.hpp"
 #include "middleware/all.hpp"
 
@@ -26,9 +27,6 @@
 #include "skills/skill.hpp"
 #include "skills/loader.hpp"
 #include "skills/registry.hpp"
-
-// Embeddings
-#include "embeddings/core.hpp"
 
 // Vector stores
 #include "vectorstore/base.hpp"

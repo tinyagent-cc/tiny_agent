@@ -11,14 +11,14 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "shell_agent",
             .system_prompt = "You are a system admin assistant. Use the exec tool to run commands. "
                              "Report the output concisely.",
             .tools = {
-                Tool::create("exec", "Run a shell command and return stdout",
+                DynamicTool::create("exec", "Run a shell command and return stdout",
                     [](const json& p) -> json {
                         auto cmd = p["command"].get<std::string>();
                         std::array<char, 256> buf;

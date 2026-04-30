@@ -28,14 +28,14 @@ int main() {
     std::cout << "=== Context Editing Middleware Demo ===\n"
               << "(Old tool results replaced with [cleared] when token budget exceeded)\n\n";
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "analyst",
             .system_prompt = "You are a research analyst. Use read_report to gather data. "
                              "After reading all requested reports, provide a brief combined summary.",
             .tools = {
-                Tool::create("read_report", "Read a research report by topic",
+                DynamicTool::create("read_report", "Read a research report by topic",
                     [](const json& p) -> json {
                         return make_report(p["topic"].get<std::string>());
                     },
@@ -66,14 +66,14 @@ int main() {
     // Show the same behavior in chat mode so we can inspect history
     std::cout << "\n--- Chat mode (inspectable history) ---\n";
 
-    auto chat_agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto chat_agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "chat_analyst",
             .system_prompt = "You are a research assistant. Read reports when asked. "
                              "Respond briefly.",
             .tools = {
-                Tool::create("read_report", "Read a research report by topic",
+                DynamicTool::create("read_report", "Read a research report by topic",
                     [](const json& p) -> json {
                         return make_report(p["topic"].get<std::string>());
                     },

@@ -1,7 +1,15 @@
 #pragma once
+// ═══════════════════════════════════════════════════════════════════════════════
+//  agent.hpp  —  AgentExecutor with strategy-based partial specialization
+//
+//  Primary template  AgentExecutor<Strategy, LLM>  is undefined.
+//  Partial specialization  AgentExecutor<deep_agent_tag, LLM>  implements
+//  a ReAct-style think→act→observe loop, constrained via  requires is_chat<LLM>.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #include "core/types.hpp"
 #include "core/tool.hpp"
-#include "core/llm.hpp"
+#include "core/model.hpp"
 #include "core/middleware.hpp"
 #include "core/log.hpp"
 #include "core/parser.hpp"
@@ -9,30 +17,35 @@
 
 namespace tiny_agent {
 
-// ── Agent configuration (everything except the LLM and logger) ──────────────
+// ─── Strategy tags ────────────────────────────────────────────────────────────
+
+struct deep_agent_tag {};
+
+// ─── Agent configuration ──────────────────────────────────────────────────────
 
 struct AgentConfig {
     std::string name = "agent";
     std::string system_prompt;
-    std::vector<Tool>          tools;
+    std::vector<DynamicTool>   tools;
     std::vector<MiddlewareFn>  middlewares;
     int max_iterations = 10;
 };
 
-// ── Agent<LLMType> — fully static-dispatch agent loop ────────────────────────
-//
-// LLMType must satisfy llm_like (e.g. LLM<openai>, LLM<anthropic>, AnyLLM).
-//
-// Usage:
-//   auto agent = Agent{LLM<openai>{"gpt-4o", key}, config};
-//   auto result = agent.run("What is 2+2?");
-//
-// Logging (default level: warn — set lower to see agent internals):
-//   auto agent = Agent{LLM<openai>{"gpt-4o", key}, config,
-//                      Log{std::cerr, LogLevel::debug}};
+// ─── Primary template — undefined: forces use of a strategy specialization ───
 
-template<llm_like LLMType>
-class Agent : public std::enable_shared_from_this<Agent<LLMType>> {
+template<typename Strategy, typename LLM>
+class AgentExecutor;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Partial specialization:  AgentExecutor<deep_agent_tag, LLM>
+//
+//  Constraint:  LLM must satisfy is_chat
+// ═══════════════════════════════════════════════════════════════════════════════
+
+template<is_chat LLMType>
+class AgentExecutor<deep_agent_tag, LLMType>
+    : public std::enable_shared_from_this<AgentExecutor<deep_agent_tag, LLMType>> {
+
     AgentConfig     cfg_;
     LLMType         llm_;
     Log             log_;
@@ -78,14 +91,15 @@ class Agent : public std::enable_shared_from_this<Agent<LLMType>> {
     }
 
 public:
-    Agent(LLMType llm, AgentConfig cfg = {}, Log log = {})
+    using input_t  = std::string;
+    using output_t = std::string;
+
+    AgentExecutor(LLMType llm, AgentConfig cfg = {}, Log log = {})
         : cfg_(std::move(cfg)), llm_(std::move(llm)), log_(std::move(log))
     {
         log_.debug(cfg_.name, "initializing (max_iterations=" + std::to_string(cfg_.max_iterations)
             + " tools=" + std::to_string(cfg_.tools.size())
             + " middlewares=" + std::to_string(cfg_.middlewares.size()) + ")");
-        if (!cfg_.system_prompt.empty())
-            log_.trace(cfg_.name, "system_prompt: " + cfg_.system_prompt);
         for (auto& t : cfg_.tools) {
             log_.trace(cfg_.name, "registering tool: " + t.schema.name);
             registry_.add(t);
@@ -93,7 +107,7 @@ public:
         for (auto& m : cfg_.middlewares) chain_.add(m);
     }
 
-    // ── Core loop (shared between run and chat) ──────────────────────
+    // ── Core loop ─────────────────────────────────────────────────────────
 
     std::string execute_loop(std::vector<Message>& msgs, const char* label = "run") {
         for (int i = 0; i < cfg_.max_iterations; ++i) {
@@ -105,7 +119,6 @@ public:
 
             if (!resp.message.has_tool_calls()) {
                 log_.debug(cfg_.name, "done: " + resp.finish_reason);
-                log_.trace(cfg_.name, "response text: " + resp.message.text().substr(0, 200));
                 return resp.message.text();
             }
 
@@ -120,7 +133,7 @@ public:
             + std::to_string(cfg_.max_iterations) + ") without producing a final response.";
     }
 
-    // ── Single-shot execution ───────────────────────────────────────────
+    // ── Single-shot execution ─────────────────────────────────────────────
 
     std::string run(const std::string& input) {
         log_.debug(cfg_.name, "run(\"" + input.substr(0, 120)
@@ -136,7 +149,7 @@ public:
         return execute_loop(msgs);
     }
 
-    // ── Parsed single-shot (structured output) ─────────────────────────
+    // ── Parsed single-shot ────────────────────────────────────────────────
 
     template<output_parser Parser = TextParser>
     auto run_parsed(const std::string& input) -> typename Parser::output_type {
@@ -145,7 +158,7 @@ public:
         return Parser::parse(synthetic);
     }
 
-    // ── Multi-turn chat ─────────────────────────────────────────────────
+    // ── Multi-turn chat ───────────────────────────────────────────────────
 
     std::string chat(const std::string& input) {
         log_.debug(cfg_.name, "chat(\"" + input.substr(0, 120)
@@ -156,25 +169,30 @@ public:
         return execute_loop(history_, "chat");
     }
 
-    // ── Tool management ─────────────────────────────────────────────────
+    // ── Tool management ───────────────────────────────────────────────────
 
-    void add_tool(Tool t) {
+    void add_tool(DynamicTool t) {
         log_.debug(cfg_.name, "adding tool: " + t.schema.name);
         cfg_.tools.push_back(t);
         registry_.add(std::move(t));
     }
 
-    // ── Expose this agent as a tool (captures this — ensure lifetime) ───
+    template<Tool T>
+    void add_tool(T tool) {
+        add_tool(to_dynamic_tool(std::move(tool)));
+    }
 
-    Tool as_tool(std::string name, std::string description,
-                 json params = json()) {
+    // ── Expose as a DynamicTool ───────────────────────────────────────────
+
+    DynamicTool as_tool(std::string name, std::string description,
+                        json params = json()) {
         if (params.empty())
             params = {{"type", "object"},
                       {"properties", {{"input", {{"type", "string"},
                                                   {"description", "The task to delegate"}}}}},
                       {"required", {"input"}}};
 
-        return Tool::create(
+        return DynamicTool::create(
             std::move(name), std::move(description),
             [this](const json& args) -> json {
                 auto input = args.contains("input")
@@ -185,47 +203,72 @@ public:
         );
     }
 
+    // ── Runnable surface ──────────────────────────────────────────────────
+
+    std::string invoke(std::string input, const RunConfig& = {}) {
+        return run(input);
+    }
+
+    std::vector<std::string> batch(std::vector<std::string> inputs, const RunConfig& cfg = {}) {
+        std::vector<std::string> out;
+        out.reserve(inputs.size());
+        for (auto& i : inputs) out.push_back(invoke(std::move(i), cfg));
+        return out;
+    }
+
+    void stream(std::string input, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
+        cb(invoke(std::move(input), cfg));
+    }
+
     void clear_history() { history_.clear(); }
     [[nodiscard]] const std::vector<Message>& history() const { return history_; }
-    [[nodiscard]] const AgentConfig& config() const { return cfg_; }
+    [[nodiscard]] const AgentConfig& agent_config() const { return cfg_; }
     [[nodiscard]] LLMType& llm() { return llm_; }
     [[nodiscard]] const LLMType& llm() const { return llm_; }
     [[nodiscard]] Log& log() { return log_; }
     [[nodiscard]] const Log& log() const { return log_; }
+    [[nodiscard]] std::size_t tool_count() const { return registry_.size(); }
+    [[nodiscard]] std::vector<ToolSchema> tool_schemas() const { return registry_.schemas(); }
 };
 
-// ── CTAD guides ─────────────────────────────────────────────────────────────
+// ─── CTAD guides ────────────────────────────────────────────────────────────
 
-template<llm_like L>
-Agent(L, AgentConfig, Log) -> Agent<L>;
+template<is_chat L>
+AgentExecutor(L, AgentConfig, Log) -> AgentExecutor<deep_agent_tag, L>;
 
-template<llm_like L>
-Agent(L, AgentConfig) -> Agent<L>;
+template<is_chat L>
+AgentExecutor(L, AgentConfig) -> AgentExecutor<deep_agent_tag, L>;
 
-template<llm_like L>
-Agent(L) -> Agent<L>;
+template<is_chat L>
+AgentExecutor(L) -> AgentExecutor<deep_agent_tag, L>;
 
-// ── Shared agent factories (for as_tool with shared ownership) ──────────────
+// ─── Factory functions ─────────────────────────────────────────────────────
 
-template<llm_like LLMType>
-auto make_shared_agent(LLMType llm, AgentConfig cfg = {}, Log log = {}) {
-    return std::make_shared<Agent<LLMType>>(
+template<is_chat LLMType>
+auto make_agent(LLMType llm, AgentConfig cfg = {}, Log log = {}) {
+    return AgentExecutor<deep_agent_tag, LLMType>(
         std::move(llm), std::move(cfg), std::move(log));
 }
 
-// ── Free function: agent_as_tool (shared_ptr ownership for nesting) ─────────
+template<is_chat LLMType>
+auto make_shared_agent(LLMType llm, AgentConfig cfg = {}, Log log = {}) {
+    return std::make_shared<AgentExecutor<deep_agent_tag, LLMType>>(
+        std::move(llm), std::move(cfg), std::move(log));
+}
+
+// ─── agent_as_tool (shared_ptr ownership for nesting) ─────────────────────
 
 template<typename AgentType>
-Tool agent_as_tool(std::shared_ptr<AgentType> agent,
-                   std::string name, std::string description,
-                   json params = json()) {
+DynamicTool agent_as_tool(std::shared_ptr<AgentType> agent,
+                          std::string name, std::string description,
+                          json params = json()) {
     if (params.empty())
         params = {{"type", "object"},
                   {"properties", {{"input", {{"type", "string"},
                                               {"description", "The task to delegate"}}}}},
                   {"required", {"input"}}};
 
-    return Tool::create(
+    return DynamicTool::create(
         std::move(name), std::move(description),
         [agent = std::move(agent)](const json& args) -> json {
             auto input = args.contains("input")

@@ -20,8 +20,8 @@ int main() {
     {
         std::cout << "--- Retry Middleware (configured, triggers on 5xx errors) ---\n";
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "retry_demo",
                 .system_prompt = "Reply in one sentence.",
@@ -42,8 +42,8 @@ int main() {
     {
         std::cout << "--- Model Retry (enhanced, with backoff config) ---\n";
 
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "model_retry_demo",
                 .system_prompt = "Reply in one sentence.",
@@ -71,12 +71,12 @@ int main() {
     {
         std::cout << "--- Model Fallback (invalid primary → valid fallback) ---\n";
 
-        std::vector<AnyLLM> fallbacks;
+        std::vector<AnyChat> fallbacks;
         fallbacks.push_back(
             init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key}));
 
-        auto agent = Agent{
-            LLM<openai>{"nonexistent-model-xyz", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"nonexistent-model-xyz", key},
             AgentConfig{
                 .name = "fallback_demo",
                 .system_prompt = "Reply in one sentence.",
@@ -100,12 +100,12 @@ int main() {
     {
         std::cout << "--- Combined: Retry + Fallback ---\n";
 
-        std::vector<AnyLLM> fallbacks;
+        std::vector<AnyChat> fallbacks;
         fallbacks.push_back(
             init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key}));
 
-        auto agent = Agent{
-            LLM<openai>{"nonexistent-model-xyz", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"nonexistent-model-xyz", key},
             AgentConfig{
                 .name = "combined",
                 .system_prompt = "Reply in one sentence.",

@@ -5,8 +5,6 @@
 
 namespace tiny_agent {
 
-// ── Runtime middleware (std::function-based, for user-defined lambdas) ───────
-
 using Next = std::function<LLMResponse(std::vector<Message>&)>;
 
 using MiddlewareFn = std::function<LLMResponse(
@@ -32,14 +30,10 @@ public:
     std::size_t size() const { return stack_.size(); }
 };
 
-// ── Concept: static middleware ───────────────────────────────────────────────
-
 template<typename T>
 concept middleware_like = requires(T mw, std::vector<Message>& msgs, Next next) {
     { mw(msgs, next) } -> std::same_as<LLMResponse>;
 };
-
-// ── Compile-time middleware stack (zero-overhead, no std::function) ──────────
 
 template<middleware_like... Mws>
 class StaticMiddlewareStack {

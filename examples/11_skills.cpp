@@ -22,8 +22,8 @@ int main() {
     // Build a system prompt that includes selected skills.
     auto skill_prompt = registry.build_prompt({"code-review", "summarize"});
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "skilled_agent",
             .system_prompt = "You are an expert assistant.\n\n" + skill_prompt,

@@ -9,13 +9,13 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "guarded",
             .system_prompt = "You are a helpful assistant.",
             .tools = {
-                Tool::create("search", "Search the web",
+                DynamicTool::create("search", "Search the web",
                     [](const json& p) -> json {
                         return "Result for: " + p["query"].get<std::string>();
                     },

@@ -61,7 +61,7 @@ namespace detail {
 
 inline std::vector<std::string> default_rationalize_hints() {
     return {
-        "Prefer targeted shell commands (sed, awk, grep) over inline processing of large content",
+        "Prefer targeted shell commands (sed, awk, grep, etc.) over inline processing of large content",
         "Use precise file operations (write specific lines) rather than rewriting entire files",
         "Combine multiple small operations into a single command when possible",
         "Narrow searches with specific patterns rather than scanning broad results",

@@ -4,15 +4,11 @@
 
 namespace tiny_agent {
 
-// ── Concept ─────────────────────────────────────────────────────────────────
-
 template<typename P>
 concept output_parser = requires(const LLMResponse& resp) {
     typename P::output_type;
     { P::parse(resp) } -> std::convertible_to<typename P::output_type>;
 };
-
-// ── Text parser (default — returns raw text) ────────────────────────────────
 
 struct TextParser {
     using output_type = std::string;
@@ -22,8 +18,6 @@ struct TextParser {
 };
 
 static_assert(output_parser<TextParser>);
-
-// ── JSON parser (deserializes response into T via nlohmann) ─────────────────
 
 template<typename T>
 struct JsonParser {
@@ -40,8 +34,6 @@ struct JsonParser {
     }
 };
 
-// ── JSON value parser (returns raw json object) ─────────────────────────────
-
 struct JsonValueParser {
     using output_type = json;
 
@@ -57,8 +49,6 @@ struct JsonValueParser {
 };
 
 static_assert(output_parser<JsonValueParser>);
-
-// ── Regex extraction parser ─────────────────────────────────────────────────
 
 template<typename Inner = TextParser>
     requires output_parser<Inner>
@@ -82,8 +72,6 @@ struct StripMarkdownParser {
         return Inner::parse(modified);
     }
 };
-
-// ── Validating parser (parses then validates via a predicate) ───────────────
 
 template<output_parser Inner, typename Pred>
     requires std::predicate<Pred, const typename Inner::output_type&>

@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 #include <tiny_agent/tiny_agent.hpp>
+#include <tiny_agent/init_chat_model.hpp>
 #include <tiny_agent/providers/openai.hpp>
 #include <tiny_agent/providers/anthropic.hpp>
 #include <tiny_agent/providers/gemini.hpp>
@@ -84,8 +85,8 @@ TEST_CASE("schema: wrong type is rejected") {
 
 TEST_CASE("openai: basic chat") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", keys().openai},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{}
     };
     auto result = agent.run("Reply with exactly: PONG");
@@ -94,12 +95,12 @@ TEST_CASE("openai: basic chat") {
 
 TEST_CASE("openai: tool calling with schema validation") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", keys().openai},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{
             .system_prompt = "Use the add tool to compute the answer.",
             .tools = {
-                Tool::create("add", "Add two numbers",
+                DynamicTool::create("add", "Add two numbers",
                     [](const json& p) -> json {
                         validate_args(two_operand_schema, p);
                         return p["a"].get<int>() + p["b"].get<int>();
@@ -112,8 +113,8 @@ TEST_CASE("openai: tool calling with schema validation") {
 
 TEST_CASE("openai: multi-turn chat") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", keys().openai},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{.system_prompt = "You are a concise assistant."}
     };
     auto first = agent.chat("Say hello");
@@ -127,7 +128,7 @@ TEST_CASE("openai: multi-turn chat") {
 
 TEST_CASE("openai: generation parameters") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto llm = LLM<openai>{"gpt-4o-mini", LLMConfig{
+    auto llm = OpenAIChat{"gpt-4o-mini", LLMConfig{
         .api_key = keys().openai,
         .temperature = 0.0,
         .max_tokens = 10,
@@ -142,8 +143,8 @@ TEST_CASE("openai: generation parameters") {
 
 TEST_CASE("anthropic: basic chat") {
     REQUIRE_FALSE(keys().claude.empty());
-    auto agent = Agent{
-        LLM<anthropic>{"claude-sonnet-4-20250514", keys().claude},
+    auto agent = AgentExecutor{
+        AnthropicChat{"claude-sonnet-4-20250514", keys().claude},
         AgentConfig{}
     };
     auto result = agent.run("Reply with exactly: PONG");
@@ -152,12 +153,12 @@ TEST_CASE("anthropic: basic chat") {
 
 TEST_CASE("anthropic: tool calling with schema validation") {
     REQUIRE_FALSE(keys().claude.empty());
-    auto agent = Agent{
-        LLM<anthropic>{"claude-sonnet-4-20250514", keys().claude},
+    auto agent = AgentExecutor{
+        AnthropicChat{"claude-sonnet-4-20250514", keys().claude},
         AgentConfig{
             .system_prompt = "Use the multiply tool.",
             .tools = {
-                Tool::create("multiply", "Multiply two numbers",
+                DynamicTool::create("multiply", "Multiply two numbers",
                     [](const json& p) -> json {
                         validate_args(two_operand_schema, p);
                         return p["a"].get<int>() * p["b"].get<int>();
@@ -172,8 +173,8 @@ TEST_CASE("anthropic: tool calling with schema validation") {
 
 TEST_CASE("gemini: basic chat") {
     REQUIRE_FALSE(keys().gemini.empty());
-    auto agent = Agent{
-        LLM<gemini>{"gemini-2.0-flash", keys().gemini},
+    auto agent = AgentExecutor{
+        GeminiChat{"gemini-2.0-flash", keys().gemini},
         AgentConfig{}
     };
     auto result = agent.run("Reply with exactly: PONG");
@@ -182,12 +183,12 @@ TEST_CASE("gemini: basic chat") {
 
 TEST_CASE("gemini: tool calling with schema validation") {
     REQUIRE_FALSE(keys().gemini.empty());
-    auto agent = Agent{
-        LLM<gemini>{"gemini-2.0-flash", keys().gemini},
+    auto agent = AgentExecutor{
+        GeminiChat{"gemini-2.0-flash", keys().gemini},
         AgentConfig{
             .system_prompt = "Use the subtract tool to compute the answer. Always use the tool.",
             .tools = {
-                Tool::create("subtract", "Subtract b from a",
+                DynamicTool::create("subtract", "Subtract b from a",
                     [](const json& p) -> json {
                         validate_args(two_operand_schema, p);
                         return p["a"].get<int>() - p["b"].get<int>();
@@ -202,12 +203,12 @@ TEST_CASE("gemini: tool calling with schema validation") {
 
 TEST_CASE("agent: tool error is handled gracefully") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", keys().openai},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{
             .system_prompt = "Call the fail tool, then report the error you received.",
             .tools = {
-                Tool::create("fail", "Always fails",
+                DynamicTool::create("fail", "Always fails",
                     [](const json&) -> json { throw ToolError("kaboom"); },
                     {{"type", "object"}, {"properties", json::object()}})
             },
@@ -217,19 +218,19 @@ TEST_CASE("agent: tool error is handled gracefully") {
     CHECK_FALSE(result.empty());
 }
 
-TEST_CASE("agent: AnyLLM type erasure") {
+TEST_CASE("agent: AnyChat type erasure") {
     REQUIRE_FALSE(keys().openai.empty());
-    AnyLLM any{LLM<openai>{"gpt-4o-mini", keys().openai}};
+    AnyChat any{OpenAIChat{"gpt-4o-mini", keys().openai}};
     CHECK(any.model_name() == "gpt-4o-mini");
 
     auto resp = any.chat({Message::user("Reply with exactly: ERASED")});
     CHECK(resp.message.text().find("ERASED") != std::string::npos);
 }
 
-TEST_CASE("agent: Agent<AnyLLM> works") {
+TEST_CASE("agent: AgentExecutor<deep_agent_tag, AnyChat> works") {
     REQUIRE_FALSE(keys().openai.empty());
-    AnyLLM any{LLM<openai>{"gpt-4o-mini", keys().openai}};
-    auto agent = Agent{std::move(any), AgentConfig{}};
+    AnyChat any{OpenAIChat{"gpt-4o-mini", keys().openai}};
+    auto agent = AgentExecutor{std::move(any), AgentConfig{}};
     auto result = agent.run("Reply with exactly: DYNAMIC");
     CHECK(result.find("DYNAMIC") != std::string::npos);
 }
@@ -237,8 +238,8 @@ TEST_CASE("agent: Agent<AnyLLM> works") {
 TEST_CASE("agent: Log captures output at debug level") {
     REQUIRE_FALSE(keys().openai.empty());
     std::ostringstream oss;
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", keys().openai},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{},
         Log{oss, LogLevel::debug}
     };
@@ -252,7 +253,7 @@ TEST_CASE("agent: cross-provider sub-agent delegation") {
     REQUIRE_FALSE(keys().gemini.empty());
 
     auto worker = make_shared_agent(
-        LLM<gemini>{"gemini-2.0-flash", keys().gemini},
+        GeminiChat{"gemini-2.0-flash", keys().gemini},
         AgentConfig{
             .name = "gemini_worker",
             .system_prompt = "Answer factual questions concisely.",
@@ -260,7 +261,7 @@ TEST_CASE("agent: cross-provider sub-agent delegation") {
     );
 
     auto manager = make_shared_agent(
-        LLM<openai>{"gpt-4o-mini", keys().openai},
+        OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{
             .name = "manager",
             .system_prompt = "Delegate questions to gemini_worker and relay the answer.",

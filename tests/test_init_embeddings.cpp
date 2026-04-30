@@ -95,31 +95,31 @@ TEST_CASE("edge: colon-only is treated as non-provider") {
 // init_embeddings — factory construction (offline, no HTTP calls)
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST_CASE("init_embeddings returns AnyEmbeddings (openai)") {
+TEST_CASE("init_embeddings returns AnyEmbedding (openai)") {
     auto emb = init_embeddings("openai:text-embedding-3-small",
                                EmbeddingConfig{.api_key = "fake-key"});
     CHECK(emb.model_name() == "text-embedding-3-small");
 }
 
-TEST_CASE("init_embeddings returns AnyEmbeddings (gemini)") {
+TEST_CASE("init_embeddings returns AnyEmbedding (gemini)") {
     auto emb = init_embeddings("gemini:text-embedding-004",
                                EmbeddingConfig{.api_key = "fake-key"});
     CHECK(emb.model_name() == "text-embedding-004");
 }
 
-TEST_CASE("init_embeddings returns AnyEmbeddings (mistral)") {
+TEST_CASE("init_embeddings returns AnyEmbedding (mistral)") {
     auto emb = init_embeddings("mistral:mistral-embed",
                                EmbeddingConfig{.api_key = "fake-key"});
     CHECK(emb.model_name() == "mistral-embed");
 }
 
-TEST_CASE("init_embeddings returns AnyEmbeddings (cohere)") {
+TEST_CASE("init_embeddings returns AnyEmbedding (cohere)") {
     auto emb = init_embeddings("cohere:embed-v4",
                                EmbeddingConfig{.api_key = "fake-key"});
     CHECK(emb.model_name() == "embed-v4");
 }
 
-TEST_CASE("init_embeddings returns AnyEmbeddings (voyageai)") {
+TEST_CASE("init_embeddings returns AnyEmbedding (voyageai)") {
     auto emb = init_embeddings("voyageai:voyage-4",
                                EmbeddingConfig{.api_key = "fake-key"});
     CHECK(emb.model_name() == "voyage-4");

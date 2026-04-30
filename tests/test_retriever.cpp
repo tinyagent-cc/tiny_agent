@@ -2,7 +2,7 @@
 #include <doctest/doctest.h>
 #include <tiny_agent/retriever.hpp>
 #include <tiny_agent/vectorstore/flat.hpp>
-#include <tiny_agent/embeddings/core.hpp>
+#include <tiny_agent/core/model.hpp>
 
 using namespace tiny_agent;
 
@@ -11,6 +11,14 @@ using namespace tiny_agent;
 // ═══════════════════════════════════════════════════════════════════════════
 
 struct MockEmbeddings {
+    using input_t   = std::string;
+    using output_t  = std::vector<float>;
+    using model_tag = embedding_tag;
+
+    std::vector<float> invoke(const std::string& text, const RunConfig& = {}) {
+        return embed_query(text);
+    }
+
     std::vector<float> embed_query(const std::string& text) {
         return make_vec(text);
     }
@@ -22,7 +30,17 @@ struct MockEmbeddings {
         return out;
     }
 
-    std::string_view model_name() const { return "mock-embed"; }
+    std::string model_name() const { return "mock-embed"; }
+    std::size_t dimensions() const { return 3; }
+
+    std::vector<std::vector<float>> batch(std::vector<std::string> texts, const RunConfig& cfg = {}) {
+        std::vector<std::vector<float>> out;
+        for (auto& t : texts) out.push_back(invoke(t, cfg));
+        return out;
+    }
+    void stream(std::string text, std::function<void(std::vector<float>)> cb, const RunConfig& cfg = {}) {
+        cb(invoke(text, cfg));
+    }
 
 private:
     static std::vector<float> make_vec(const std::string& text) {
@@ -40,14 +58,14 @@ private:
     }
 };
 
-static_assert(embeddings_like<MockEmbeddings>);
+static_assert(is_embedding<MockEmbeddings>);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Retriever — basic operations
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST_CASE("Retriever: add_documents and query") {
-    auto retriever = Retriever{AnyEmbeddings{MockEmbeddings{}}, 2};
+    auto retriever = Retriever{MockEmbeddings{}, 2};
 
     retriever.add_documents({"alpha", "beta", "gamma"});
 
@@ -57,7 +75,7 @@ TEST_CASE("Retriever: add_documents and query") {
 }
 
 TEST_CASE("Retriever: store size tracks documents") {
-    auto retriever = Retriever{AnyEmbeddings{MockEmbeddings{}}};
+    auto retriever = Retriever{MockEmbeddings{}};
     CHECK(retriever.store().size() == 0);
 
     retriever.add_documents({"one", "two", "three"});
@@ -65,7 +83,7 @@ TEST_CASE("Retriever: store size tracks documents") {
 }
 
 TEST_CASE("Retriever: query with custom top_k") {
-    auto retriever = Retriever{AnyEmbeddings{MockEmbeddings{}}, 10};
+    auto retriever = Retriever{MockEmbeddings{}, 10};
     retriever.add_documents({"a", "b", "c"});
 
     auto results = retriever.query("a", 1);
@@ -73,7 +91,7 @@ TEST_CASE("Retriever: query with custom top_k") {
 }
 
 TEST_CASE("Retriever: metadata support") {
-    auto retriever = Retriever{AnyEmbeddings{MockEmbeddings{}}};
+    auto retriever = Retriever{MockEmbeddings{}};
     retriever.add_documents(
         {"doc with meta"},
         {json{{"source", "test"}}}
@@ -89,7 +107,7 @@ TEST_CASE("Retriever: metadata support") {
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST_CASE("Retriever: as_tool returns valid tool") {
-    auto retriever = Retriever{AnyEmbeddings{MockEmbeddings{}}};
+    auto retriever = Retriever{MockEmbeddings{}};
     retriever.add_documents({"hello world"});
 
     auto tool = retriever.as_tool("search", "Search docs");
@@ -100,7 +118,7 @@ TEST_CASE("Retriever: as_tool returns valid tool") {
 }
 
 TEST_CASE("Retriever: tool invocation returns JSON results") {
-    auto retriever = Retriever{AnyEmbeddings{MockEmbeddings{}}, 2};
+    auto retriever = Retriever{MockEmbeddings{}, 2};
     retriever.add_documents({"first doc", "second doc", "third doc"});
 
     auto tool = retriever.as_tool("search", "Search");
@@ -117,7 +135,7 @@ TEST_CASE("Retriever: tool invocation returns JSON results") {
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST_CASE("Retriever<FlatVectorStore> explicit template") {
-    Retriever<FlatVectorStore> retriever{AnyEmbeddings{MockEmbeddings{}}};
+    Retriever<MockEmbeddings, FlatVectorStore> retriever{MockEmbeddings{}};
     retriever.add_documents({"test"});
     CHECK(retriever.store().size() == 1);
 }
@@ -126,6 +144,6 @@ TEST_CASE("Retriever with pre-built store") {
     FlatVectorStore store;
     store.add("pre", "pre-existing", {1, 0, 0}, json::object());
 
-    auto retriever = Retriever{std::move(store), AnyEmbeddings{MockEmbeddings{}}};
+    auto retriever = Retriever{std::move(store), MockEmbeddings{}};
     CHECK(retriever.store().size() == 1);
 }

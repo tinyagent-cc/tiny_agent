@@ -36,7 +36,7 @@ int main() {
 
     // ── 3. Create an agent that uses the retriever as a tool ─────────────
 
-    auto agent = Agent{
+    auto agent = AgentExecutor{
         init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key}),
         AgentConfig{
             .name = "knowledge_agent",

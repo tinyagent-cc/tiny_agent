@@ -27,14 +27,14 @@ int main() {
         return next(msgs);
     };
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "devops",
             .system_prompt = "You are a devops assistant. Use tools to inspect the system. "
                              "Report findings concisely.",
             .tools = {
-                Tool::create("get_logs", "Fetch recent system logs",
+                DynamicTool::create("get_logs", "Fetch recent system logs",
                     [](const json& p) -> json {
                         auto service = p["service"].get<std::string>();
                         // Simulate a large log dump (~1200 chars ≈ 300 tokens)
@@ -57,7 +57,7 @@ int main() {
                                                    {"description", "Service name"}}}}},
                      {"required", {"service"}}}),
 
-                Tool::create("exec", "Run a shell command",
+                DynamicTool::create("exec", "Run a shell command",
                     [](const json& p) -> json {
                         auto cmd = p["command"].get<std::string>();
                         std::array<char, 256> buf;

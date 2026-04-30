@@ -10,13 +10,13 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
+    auto agent = AgentExecutor{
+        OpenAIChat{"gpt-4o-mini", key},
         AgentConfig{
             .name = "math_agent",
             .system_prompt = "You are a math assistant. Use the provided tools to compute answers.",
             .tools = {
-                Tool::create("add", "Add two numbers",
+                DynamicTool::create("add", "Add two numbers",
                     [](const json& p) -> json {
                         return p["a"].get<double>() + p["b"].get<double>();
                     },
@@ -24,7 +24,7 @@ int main() {
                      {"properties", {{"a", {{"type", "number"}}}, {"b", {{"type", "number"}}}}},
                      {"required", {"a", "b"}}}),
 
-                Tool::create("sqrt", "Square root of a number",
+                DynamicTool::create("sqrt", "Square root of a number",
                     [](const json& p) -> json {
                         return std::sqrt(p["x"].get<double>());
                     },

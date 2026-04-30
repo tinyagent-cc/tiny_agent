@@ -209,7 +209,7 @@ TEST_CASE("ToolCache: eviction via underlying store") {
 
 TEST_CASE("cached: returns same result on repeated calls") {
     int call_count = 0;
-    auto tool = Tool::create("add", "adds numbers",
+    auto tool = DynamicTool::create("add", "adds numbers",
         [&](const json& args) -> json {
             ++call_count;
             return args["a"].get<int>() + args["b"].get<int>();
@@ -228,7 +228,7 @@ TEST_CASE("cached: returns same result on repeated calls") {
 
 TEST_CASE("cached: different args call through") {
     int call_count = 0;
-    auto tool = Tool::create("mul", "multiplies",
+    auto tool = DynamicTool::create("mul", "multiplies",
         [&](const json& args) -> json {
             ++call_count;
             return args["a"].get<int>() * args["b"].get<int>();
@@ -242,7 +242,7 @@ TEST_CASE("cached: different args call through") {
 }
 
 TEST_CASE("cached: preserves tool schema") {
-    auto tool = Tool::create("my_tool", "desc",
+    auto tool = DynamicTool::create("my_tool", "desc",
         [](const json&) -> json { return "ok"; },
         {{"type", "object"}, {"properties", {{"x", {{"type", "string"}}}}}});
 
@@ -254,7 +254,7 @@ TEST_CASE("cached: preserves tool schema") {
 
 TEST_CASE("cached: string results cached correctly") {
     int calls = 0;
-    auto tool = Tool::create("echo", "echoes",
+    auto tool = DynamicTool::create("echo", "echoes",
         [&](const json& args) -> json {
             ++calls;
             return args["text"].get<std::string>();
@@ -274,9 +274,9 @@ TEST_CASE("cached: shared cache across tools") {
     auto shared = std::make_shared<ToolCache<InMemoryStore<32>>>();
 
     int a_calls = 0, b_calls = 0;
-    auto tool_a = Tool::create("a", "tool a",
+    auto tool_a = DynamicTool::create("a", "tool a",
         [&](const json& args) -> json { ++a_calls; return "a:" + args.dump(); });
-    auto tool_b = Tool::create("b", "tool b",
+    auto tool_b = DynamicTool::create("b", "tool b",
         [&](const json& args) -> json { ++b_calls; return "b:" + args.dump(); });
 
     auto cached_a = memory::cached(std::move(tool_a), shared);

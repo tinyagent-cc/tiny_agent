@@ -12,7 +12,7 @@ int main() {
     LLMConfig cfg{.api_key = key};
 
     auto fact_checker = make_shared_agent(
-        LLM<openai>{"gpt-4o-mini", cfg},
+        OpenAIChat{"gpt-4o-mini", cfg},
         AgentConfig{
             .name = "fact_checker",
             .system_prompt = "You verify claims. Reply with VERIFIED or UNVERIFIED followed by a one-line explanation.",
@@ -20,7 +20,7 @@ int main() {
     );
 
     auto analyst = make_shared_agent(
-        LLM<openai>{"gpt-4o-mini", cfg},
+        OpenAIChat{"gpt-4o-mini", cfg},
         AgentConfig{
             .name = "analyst",
             .system_prompt = "You analyze topics and produce bullet-point summaries. "
@@ -30,7 +30,7 @@ int main() {
     );
 
     auto director = make_shared_agent(
-        LLM<openai>{"gpt-4o", cfg},
+        OpenAIChat{"gpt-4o", cfg},
         AgentConfig{
             .name = "director",
             .system_prompt = "You are the director. Use the analyst to produce a verified analysis. "

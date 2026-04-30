@@ -50,21 +50,21 @@ public:
     Store& backing_store()   { return store_; }
 };
 
-// ── cached() — wrap a Tool with transparent result caching ──────────────────
+// ── cached() — wrap a DynamicTool with transparent result caching ────────────
 //
-// Returns a new Tool with the same schema whose handler checks the cache
-// before executing.  The cache is shared (ref-counted) so the Tool's
+// Returns a new DynamicTool with the same schema whose handler checks the cache
+// before executing.  The cache is shared (ref-counted) so the DynamicTool's
 // std::function stays copyable.
 //
-//   auto my_tool = Tool::create("search", "web search", search_fn);
+//   auto my_tool = DynamicTool::create("search", "web search", search_fn);
 //   auto fast    = memory::cached<128>(std::move(my_tool));  // LRU-128
 
 template<std::size_t MaxEntries = 256>
-Tool cached(Tool tool) {
+DynamicTool cached(DynamicTool tool) {
     auto cache = std::make_shared<ToolCache<InMemoryStore<MaxEntries>>>();
     auto name  = tool.schema.name;
 
-    return Tool::create(
+    return DynamicTool::create(
         tool.schema.name, tool.schema.description,
         [fn = std::move(tool.fn), cache, name](const json& args) -> json {
             if (auto hit = cache->lookup(name, args))
@@ -78,10 +78,10 @@ Tool cached(Tool tool) {
 
 // Overload accepting a pre-existing shared cache (for cross-tool sharing).
 template<memory_store Store>
-Tool cached(Tool tool, std::shared_ptr<ToolCache<Store>> cache) {
+DynamicTool cached(DynamicTool tool, std::shared_ptr<ToolCache<Store>> cache) {
     auto name = tool.schema.name;
 
-    return Tool::create(
+    return DynamicTool::create(
         tool.schema.name, tool.schema.description,
         [fn = std::move(tool.fn), cache, name](const json& args) -> json {
             if (auto hit = cache->lookup(name, args))

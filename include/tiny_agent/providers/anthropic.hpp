@@ -1,30 +1,41 @@
 #pragma once
-#include "../core/llm.hpp"
+// ═══════════════════════════════════════════════════════════════════════════════
+//  providers/anthropic.hpp  —  Full specialization of LLMModel for Anthropic
+//
+//  LLMModel<Anthropic, chat_tag>  — Claude 3/3.5/4 family
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#include "../core/model.hpp"
+#include "../core/tool.hpp"
 
 namespace tiny_agent {
 
-// ── Provider tag ────────────────────────────────────────────────────────────
+struct Anthropic {};
 
-struct anthropic {};
+template<> class LLMModel<Anthropic, chat_tag>;
 
-// ── Traits specialization ───────────────────────────────────────────────────
-
+// ═══════════════════════════════════════════════════════════════════════════════
+//  LLMModel<Anthropic, chat_tag>
+// ═══════════════════════════════════════════════════════════════════════════════
 template<>
-struct provider_traits<anthropic> {
-    static constexpr std::string_view name             = "anthropic";
-    static constexpr std::string_view default_base_url = "https://api.anthropic.com";
+class LLMModel<Anthropic, chat_tag> {
+    std::string     model_;
+    LLMConfig       config_;
+    httplib::Client client_;
 
-    static void configure_auth(httplib::Headers& hdrs, const LLMConfig& cfg) {
-        hdrs.emplace("x-api-key", cfg.api_key);
+    void init_client() {
+        config_.log.debug("llm", "anthropic client initializing (model=" + model_ + ")");
+        client_.set_read_timeout(config_.timeout_seconds);
+        httplib::Headers hdrs;
+        hdrs.emplace("x-api-key", config_.api_key);
         hdrs.emplace("anthropic-version",
-            cfg.api_version.empty() ? "2023-06-01" : cfg.api_version);
+            config_.api_version.empty() ? "2023-06-01" : config_.api_version);
+        for (auto& [k, v] : config_.headers) hdrs.emplace(k, v);
+        if (!hdrs.empty()) client_.set_default_headers(hdrs);
+#ifdef __APPLE__
+        client_.set_ca_cert_path("/etc/ssl/cert.pem");
+#endif
     }
-
-    static std::string request_path(std::string_view /*model*/, const LLMConfig& /*cfg*/) {
-        return "/v1/messages";
-    }
-
-    // ── Serialization ───────────────────────────────────────────────────
 
     static json message_to_json(const Message& m) {
         json j;
@@ -93,20 +104,16 @@ struct provider_traits<anthropic> {
         return m;
     }
 
-    // ── Core trait interface ─────────────────────────────────────────────
-
-    static json build_request(std::string_view model,
-                              const std::vector<Message>& messages,
-                              const std::vector<ToolSchema>& tools,
-                              const LLMConfig& cfg) {
+    json build_request(const std::vector<Message>& messages,
+                       const std::vector<ToolSchema>& tools) const {
         json body;
-        body["model"]       = model;
-        body["max_tokens"]  = cfg.max_tokens;
-        body["temperature"] = cfg.temperature;
+        body["model"]       = model_;
+        body["max_tokens"]  = config_.max_tokens;
+        body["temperature"] = config_.temperature;
 
-        if (cfg.top_p)         body["top_p"] = *cfg.top_p;
-        if (cfg.top_k)         body["top_k"] = static_cast<int>(*cfg.top_k);
-        if (!cfg.stop.empty()) body["stop_sequences"] = cfg.stop;
+        if (config_.top_p)         body["top_p"] = *config_.top_p;
+        if (config_.top_k)         body["top_k"] = static_cast<int>(*config_.top_k);
+        if (!config_.stop.empty()) body["stop_sequences"] = config_.stop;
 
         json msgs = json::array();
         std::string merged_system;
@@ -128,20 +135,106 @@ struct provider_traits<anthropic> {
             body["tools"] = ts;
         }
 
-        if (!cfg.extra.empty()) body.merge_patch(cfg.extra);
+        if (!config_.extra.empty()) body.merge_patch(config_.extra);
         return body;
     }
 
-    static LLMResponse parse_response(const json& j) {
-        return {
-            parse_message(j),
-            j.value("usage", json::object()),
-            j.value("stop_reason", std::string{}),
-            j
-        };
+public:
+    using input_t   = std::string;
+    using output_t  = std::string;
+    using model_tag = chat_tag;
+
+    LLMModel(std::string model, LLMConfig cfg = {})
+        : model_(std::move(model))
+        , config_(std::move(cfg))
+        , client_(config_.base_url.empty()
+              ? "https://api.anthropic.com" : config_.base_url)
+    { init_client(); }
+
+    LLMModel(std::string model, std::string api_key)
+        : LLMModel(std::move(model), LLMConfig{.api_key = std::move(api_key)}) {}
+
+    explicit LLMModel(ModelConfig cfg = {.model_name = "claude-sonnet-4-20250514"})
+        : LLMModel(cfg.model_name.empty() ? "claude-sonnet-4-20250514" : cfg.model_name,
+                    LLMConfig{.api_key = cfg.api_key,
+                              .base_url = cfg.base_url,
+                              .temperature = cfg.temperature,
+                              .max_tokens = static_cast<int>(cfg.max_tokens)}) {}
+
+    LLMModel(const LLMModel&)            = delete;
+    LLMModel& operator=(const LLMModel&) = delete;
+    LLMModel(LLMModel&&)                 = default;
+    LLMModel& operator=(LLMModel&&)      = default;
+
+    [[nodiscard]] std::string model_name()  const { return model_; }
+    [[nodiscard]] float       temperature() const { return static_cast<float>(config_.temperature); }
+
+    std::string invoke(std::string prompt, const RunConfig& = {}) {
+        std::vector<Message> msgs = {Message::user(std::move(prompt))};
+        auto resp = chat(msgs);
+        return resp.message.text();
     }
+
+    LLMResponse chat(const std::vector<Message>& msgs,
+                     const std::vector<ToolSchema>& tools = {}) {
+        auto& log = config_.log;
+        log.debug("llm", "anthropic chat (model=" + model_
+            + " messages=" + std::to_string(msgs.size())
+            + " tools=" + std::to_string(tools.size()) + ")");
+
+        auto body = build_request(msgs, tools);
+        std::string path = "/v1/messages";
+        log.trace("llm", "POST " + path);
+
+        auto res = client_.Post(path, body.dump(), "application/json");
+        if (!res) {
+            auto err = "HTTP request failed: " + httplib::to_string(res.error());
+            log.error("llm", err);
+            throw APIError(0, err);
+        }
+
+        if (res->status != 200) {
+            log.error("llm", "anthropic API error (status="
+                + std::to_string(res->status) + "): " + res->body);
+            throw APIError(res->status, "anthropic API error: " + res->body);
+        }
+
+        json parsed;
+        try {
+            parsed = json::parse(res->body);
+        } catch (const std::exception& e) {
+            throw APIError(res->status,
+                std::string("anthropic returned invalid JSON: ") + e.what());
+        }
+
+        LLMResponse response{
+            parse_message(parsed),
+            parsed.value("usage", json::object()),
+            parsed.value("stop_reason", std::string{}),
+            parsed
+        };
+
+        log.debug("llm", "finish_reason=" + response.finish_reason
+            + " tool_calls=" + std::to_string(response.message.tool_calls.size()));
+        return response;
+    }
+
+    std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& cfg = {}) {
+        std::vector<std::string> out;
+        out.reserve(prompts.size());
+        for (auto& p : prompts) out.push_back(invoke(std::move(p), cfg));
+        return out;
+    }
+
+    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
+        cb(invoke(std::move(prompt), cfg));
+    }
+
+    const LLMConfig& config() const { return config_; }
 };
 
-static_assert(provider_defined<anthropic>);
+using AnthropicChat = LLMModel<Anthropic, chat_tag>;
+
+static_assert(is_chat<AnthropicChat>, "AnthropicChat must satisfy is_chat");
 
 } // namespace tiny_agent

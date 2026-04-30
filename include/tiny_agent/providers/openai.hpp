@@ -1,32 +1,44 @@
 #pragma once
-#include "../core/llm.hpp"
+// ═══════════════════════════════════════════════════════════════════════════════
+//  providers/openai.hpp  —  Full specializations of LLMModel for OpenAI
+//
+//  LLMModel<OpenAI, chat_tag>       — GPT-4o, GPT-4-turbo, etc.
+//  LLMModel<OpenAI, embedding_tag>  — text-embedding-3-{small,large}
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#include "../core/model.hpp"
+#include "../core/tool.hpp"
 
 namespace tiny_agent {
 
-// ── Provider tag ────────────────────────────────────────────────────────────
+struct OpenAI {};
 
-struct openai {};
+template<> class LLMModel<OpenAI, chat_tag>;
+template<> class LLMModel<OpenAI, embedding_tag>;
 
-// ── Traits specialization ───────────────────────────────────────────────────
-
+// ═══════════════════════════════════════════════════════════════════════════════
+//  LLMModel<OpenAI, chat_tag>
+// ═══════════════════════════════════════════════════════════════════════════════
 template<>
-struct provider_traits<openai> {
-    static constexpr std::string_view name         = "openai";
-    static constexpr std::string_view default_base_url = "https://api.openai.com";
+class LLMModel<OpenAI, chat_tag> {
+    std::string     model_;
+    LLMConfig       config_;
+    httplib::Client client_;
 
-    static void configure_auth(httplib::Headers& hdrs, const LLMConfig& cfg) {
-        if (!cfg.api_key.empty())
-            hdrs.emplace("Authorization", "Bearer " + cfg.api_key);
+    void init_client() {
+        config_.log.debug("llm", "openai client initializing (model=" + model_ + ")");
+        client_.set_read_timeout(config_.timeout_seconds);
+        httplib::Headers hdrs;
+        if (!config_.api_key.empty())
+            hdrs.emplace("Authorization", "Bearer " + config_.api_key);
+        for (auto& [k, v] : config_.headers) hdrs.emplace(k, v);
+        if (!hdrs.empty()) client_.set_default_headers(hdrs);
+#ifdef __APPLE__
+        client_.set_ca_cert_path("/etc/ssl/cert.pem");
+#endif
     }
 
-    static std::string request_path(std::string_view /*model*/, const LLMConfig& cfg) {
-        std::string path = "/v1/chat/completions";
-        if (!cfg.api_version.empty())
-            path += "?api-version=" + cfg.api_version;
-        return path;
-    }
-
-    // ── Serialization ───────────────────────────────────────────────────
+    // ── Serialization helpers ────────────────────────────────────────────────
 
     static json message_to_json(const Message& m) {
         json j;
@@ -89,25 +101,20 @@ struct provider_traits<openai> {
         return m;
     }
 
-    // ── Core trait interface ─────────────────────────────────────────────
-
-    static json build_request(std::string_view model,
-                              const std::vector<Message>& messages,
-                              const std::vector<ToolSchema>& tools,
-                              const LLMConfig& cfg) {
+    json build_request(const std::vector<Message>& messages,
+                       const std::vector<ToolSchema>& tools) const {
         json body;
-        body["model"]       = model;
-        body["temperature"] = cfg.temperature;
-        body["max_tokens"]  = cfg.max_tokens;
+        body["model"]       = model_;
+        body["temperature"] = config_.temperature;
+        body["max_tokens"]  = config_.max_tokens;
 
-        if (cfg.top_p)              body["top_p"]              = *cfg.top_p;
-        if (cfg.frequency_penalty)  body["frequency_penalty"]  = *cfg.frequency_penalty;
-        if (cfg.presence_penalty)   body["presence_penalty"]   = *cfg.presence_penalty;
-        if (cfg.seed)               body["seed"]               = *cfg.seed;
-        if (!cfg.stop.empty())      body["stop"]               = cfg.stop;
-        if (cfg.response_format) {
-            body["response_format"] = {{"type", *cfg.response_format}};
-        }
+        if (config_.top_p)              body["top_p"]              = *config_.top_p;
+        if (config_.frequency_penalty)  body["frequency_penalty"]  = *config_.frequency_penalty;
+        if (config_.presence_penalty)   body["presence_penalty"]   = *config_.presence_penalty;
+        if (config_.seed)               body["seed"]               = *config_.seed;
+        if (!config_.stop.empty())      body["stop"]               = config_.stop;
+        if (config_.response_format)
+            body["response_format"] = {{"type", *config_.response_format}};
 
         json msgs = json::array();
         for (auto& m : messages)
@@ -121,21 +128,256 @@ struct provider_traits<openai> {
             body["tools"] = ts;
         }
 
-        if (!cfg.extra.empty()) body.merge_patch(cfg.extra);
+        if (!config_.extra.empty()) body.merge_patch(config_.extra);
         return body;
     }
 
-    static LLMResponse parse_response(const json& j) {
-        auto& choice = j["choices"][0];
-        return {
-            parse_choice(choice),
-            j.value("usage", json::object()),
-            choice.value("finish_reason", std::string{}),
-            j
-        };
+    std::string request_path() const {
+        std::string path = "/v1/chat/completions";
+        if (!config_.api_version.empty())
+            path += "?api-version=" + config_.api_version;
+        return path;
     }
+
+public:
+    using input_t   = std::string;
+    using output_t  = std::string;
+    using model_tag = chat_tag;
+
+    LLMModel(std::string model, LLMConfig cfg = {})
+        : model_(std::move(model))
+        , config_(std::move(cfg))
+        , client_(config_.base_url.empty()
+              ? "https://api.openai.com" : config_.base_url)
+    { init_client(); }
+
+    LLMModel(std::string model, std::string api_key)
+        : LLMModel(std::move(model), LLMConfig{.api_key = std::move(api_key)}) {}
+
+    explicit LLMModel(ModelConfig cfg = {.model_name = "gpt-4o"})
+        : LLMModel(cfg.model_name.empty() ? "gpt-4o" : cfg.model_name,
+                    LLMConfig{.api_key = cfg.api_key,
+                              .base_url = cfg.base_url,
+                              .temperature = cfg.temperature,
+                              .max_tokens = static_cast<int>(cfg.max_tokens)}) {}
+
+    LLMModel(const LLMModel&)            = delete;
+    LLMModel& operator=(const LLMModel&) = delete;
+    LLMModel(LLMModel&&)                 = default;
+    LLMModel& operator=(LLMModel&&)      = default;
+
+    // ── Concept surface (is_chat) ───────────────────────────────────────────
+
+    [[nodiscard]] std::string model_name()  const { return model_; }
+    [[nodiscard]] float       temperature() const { return static_cast<float>(config_.temperature); }
+
+    std::string invoke(std::string prompt, const RunConfig& = {}) {
+        std::vector<Message> msgs = {Message::user(std::move(prompt))};
+        auto resp = chat(msgs);
+        return resp.message.text();
+    }
+
+    LLMResponse chat(const std::vector<Message>& msgs,
+                     const std::vector<ToolSchema>& tools = {}) {
+        auto& log = config_.log;
+        log.debug("llm", "openai chat (model=" + model_
+            + " messages=" + std::to_string(msgs.size())
+            + " tools=" + std::to_string(tools.size()) + ")");
+
+        auto body = build_request(msgs, tools);
+        auto path = request_path();
+        log.trace("llm", "POST " + path);
+
+        auto res = client_.Post(path, body.dump(), "application/json");
+        if (!res) {
+            auto err = "HTTP request failed: " + httplib::to_string(res.error());
+            log.error("llm", err);
+            throw APIError(0, err);
+        }
+
+        if (res->status != 200) {
+            log.error("llm", "openai API error (status="
+                + std::to_string(res->status) + "): " + res->body);
+            throw APIError(res->status, "openai API error: " + res->body);
+        }
+
+        json parsed;
+        try {
+            parsed = json::parse(res->body);
+        } catch (const std::exception& e) {
+            throw APIError(res->status,
+                std::string("openai returned invalid JSON: ") + e.what());
+        }
+
+        auto& choice = parsed["choices"][0];
+        LLMResponse response{
+            parse_choice(choice),
+            parsed.value("usage", json::object()),
+            choice.value("finish_reason", std::string{}),
+            parsed
+        };
+
+        log.debug("llm", "finish_reason=" + response.finish_reason
+            + " tool_calls=" + std::to_string(response.message.tool_calls.size()));
+        return response;
+    }
+
+    // ── Runnable surface ────────────────────────────────────────────────────
+
+    std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& cfg = {}) {
+        std::vector<std::string> out;
+        out.reserve(prompts.size());
+        for (auto& p : prompts) out.push_back(invoke(std::move(p), cfg));
+        return out;
+    }
+
+    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
+        cb(invoke(std::move(prompt), cfg));
+    }
+
+    const LLMConfig& config() const { return config_; }
 };
 
-static_assert(provider_defined<openai>);
+// ═══════════════════════════════════════════════════════════════════════════════
+//  LLMModel<OpenAI, embedding_tag>
+// ═══════════════════════════════════════════════════════════════════════════════
+template<>
+class LLMModel<OpenAI, embedding_tag> {
+    std::string       model_;
+    EmbeddingConfig   config_;
+    httplib::Client   client_;
+
+    void init_client() {
+        config_.log.debug("embeddings", "openai client initializing (model=" + model_ + ")");
+        client_.set_read_timeout(config_.timeout_seconds);
+        httplib::Headers hdrs;
+        if (!config_.api_key.empty())
+            hdrs.emplace("Authorization", "Bearer " + config_.api_key);
+        for (auto& [k, v] : config_.headers) hdrs.emplace(k, v);
+        if (!hdrs.empty()) client_.set_default_headers(hdrs);
+#ifdef __APPLE__
+        client_.set_ca_cert_path("/etc/ssl/cert.pem");
+#endif
+    }
+
+    EmbeddingResponse embed_raw(const std::vector<std::string>& texts) {
+        auto& log = config_.log;
+        log.debug("embeddings", "openai embed (model=" + model_
+            + " texts=" + std::to_string(texts.size()) + ")");
+
+        json body;
+        body["model"]           = model_;
+        body["input"]           = texts;
+        body["encoding_format"] = "float";
+        if (config_.dimensions) body["dimensions"] = *config_.dimensions;
+        if (!config_.extra.empty()) body.merge_patch(config_.extra);
+
+        std::string path = "/v1/embeddings";
+        log.trace("embeddings", "POST " + path);
+
+        auto res = client_.Post(path, body.dump(), "application/json");
+        if (!res) {
+            auto err = "HTTP request failed: " + httplib::to_string(res.error());
+            log.error("embeddings", err);
+            throw APIError(0, err);
+        }
+
+        if (res->status != 200) {
+            log.error("embeddings", "openai API error (status="
+                + std::to_string(res->status) + "): " + res->body);
+            throw APIError(res->status, "openai API error: " + res->body);
+        }
+
+        json parsed;
+        try {
+            parsed = json::parse(res->body);
+        } catch (const std::exception& e) {
+            throw APIError(res->status,
+                std::string("openai returned invalid JSON: ") + e.what());
+        }
+
+        auto& data = parsed["data"];
+        std::vector<std::vector<float>> embeddings(data.size());
+        for (auto& item : data) {
+            auto idx = item["index"].get<size_t>();
+            embeddings[idx] = item["embedding"].get<std::vector<float>>();
+        }
+
+        log.debug("embeddings",
+            "returned " + std::to_string(embeddings.size()) + " embedding(s)");
+        return {std::move(embeddings), parsed.value("usage", json::object()), parsed};
+    }
+
+public:
+    using input_t   = std::string;
+    using output_t  = std::vector<float>;
+    using model_tag = embedding_tag;
+
+    LLMModel(std::string model, EmbeddingConfig cfg = {})
+        : model_(std::move(model))
+        , config_(std::move(cfg))
+        , client_(config_.base_url.empty()
+              ? "https://api.openai.com" : config_.base_url)
+    { init_client(); }
+
+    LLMModel(std::string model, std::string api_key)
+        : LLMModel(std::move(model), EmbeddingConfig{.api_key = std::move(api_key)}) {}
+
+    explicit LLMModel(ModelConfig cfg = {.model_name = "text-embedding-3-large", .dimensions = 3072})
+        : LLMModel(cfg.model_name.empty() ? "text-embedding-3-large" : cfg.model_name,
+                    EmbeddingConfig{.api_key = cfg.api_key,
+                                   .base_url = cfg.base_url,
+                                   .dimensions = cfg.dimensions ? std::optional<int>(static_cast<int>(cfg.dimensions)) : std::nullopt}) {}
+
+    LLMModel(const LLMModel&)            = delete;
+    LLMModel& operator=(const LLMModel&) = delete;
+    LLMModel(LLMModel&&)                 = default;
+    LLMModel& operator=(LLMModel&&)      = default;
+
+    // ── Concept surface (is_embedding) ──────────────────────────────────────
+
+    [[nodiscard]] std::string model_name() const { return model_; }
+    [[nodiscard]] std::size_t dimensions() const {
+        return config_.dimensions ? static_cast<std::size_t>(*config_.dimensions) : 0;
+    }
+
+    std::vector<float> invoke(const std::string& text, const RunConfig& = {}) {
+        return embed_query(text);
+    }
+
+    std::vector<float> embed_query(const std::string& text) {
+        auto resp = embed_raw({text});
+        if (resp.embeddings.empty())
+            throw Error("embed_query: no embedding returned");
+        return std::move(resp.embeddings[0]);
+    }
+
+    std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts) {
+        if (texts.empty()) return {};
+        return std::move(embed_raw(texts).embeddings);
+    }
+
+    // ── Runnable surface ────────────────────────────────────────────────────
+
+    std::vector<std::vector<float>> batch(std::vector<std::string> texts, const RunConfig& cfg = {}) {
+        std::vector<std::vector<float>> out;
+        out.reserve(texts.size());
+        for (auto& t : texts) out.push_back(invoke(t, cfg));
+        return out;
+    }
+
+    void stream(std::string text, std::function<void(std::vector<float>)> cb, const RunConfig& cfg = {}) {
+        cb(invoke(text, cfg));
+    }
+
+    const EmbeddingConfig& config() const { return config_; }
+};
+
+// ─── Convenience aliases ──────────────────────────────────────────────────────
+using OpenAIChat      = LLMModel<OpenAI, chat_tag>;
+using OpenAIEmbedding = LLMModel<OpenAI, embedding_tag>;
+
+static_assert(is_chat<OpenAIChat>,           "OpenAIChat must satisfy is_chat");
+static_assert(is_embedding<OpenAIEmbedding>, "OpenAIEmbedding must satisfy is_embedding");
 
 } // namespace tiny_agent

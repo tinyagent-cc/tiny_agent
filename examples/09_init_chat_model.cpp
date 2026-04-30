@@ -12,8 +12,8 @@ int main() {
     // Create an LLM from a provider:model string — no compile-time provider tag needed.
     auto llm = init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key});
 
-    // Works with Agent<AnyLLM> seamlessly.
-    auto agent = Agent{std::move(llm), AgentConfig{
+    // Works with AgentExecutor<deep_agent_tag, AnyChat> seamlessly.
+    auto agent = AgentExecutor{std::move(llm), AgentConfig{
         .name = "dynamic_agent",
         .system_prompt = "You are a concise assistant.",
     }};

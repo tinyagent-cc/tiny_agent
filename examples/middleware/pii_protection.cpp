@@ -15,8 +15,8 @@ int main() {
 
     {
         std::cout << "--- Strategy: REDACT ---\n";
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "redact",
                 .system_prompt = "Repeat the user's message back exactly as you receive it. "
@@ -38,8 +38,8 @@ int main() {
 
     {
         std::cout << "--- Strategy: MASK ---\n";
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "mask",
                 .system_prompt = "Repeat the user's message back exactly as you receive it.",
@@ -59,8 +59,8 @@ int main() {
 
     {
         std::cout << "--- Strategy: BLOCK ---\n";
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "block",
                 .system_prompt = "You are a helpful assistant.",
@@ -82,8 +82,8 @@ int main() {
 
     {
         std::cout << "--- Output Scrubbing ---\n";
-        auto agent = Agent{
-            LLM<openai>{"gpt-4o-mini", key},
+        auto agent = AgentExecutor{
+            OpenAIChat{"gpt-4o-mini", key},
             AgentConfig{
                 .name = "output_scrub",
                 .system_prompt = "Generate a fictional person profile: name, email "

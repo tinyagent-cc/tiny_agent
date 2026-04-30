@@ -1,23 +1,17 @@
 #pragma once
 #include "../core/middleware.hpp"
-#include "../core/llm.hpp"
+#include "../init_chat_model.hpp"
 #include <memory>
 
 namespace tiny_agent::middleware {
 
-// Automatically fall back to alternative models when the primary model fails.
-// Inspired by LangChain's ModelFallbackMiddleware.
-//
-// Because AnyLLM is move-only, fallback state lives in a shared_ptr so the
-// resulting MiddlewareFn (std::function) stays copyable.
-
 inline MiddlewareFn model_fallback(
-    std::vector<AnyLLM> fallback_llms,
+    std::vector<AnyChat> fallback_llms,
     std::vector<ToolSchema> schemas = {},
     Log log = {})
 {
     struct State {
-        std::vector<AnyLLM> llms;
+        std::vector<AnyChat> llms;
         std::vector<ToolSchema> schemas;
         Log log;
     };
@@ -46,7 +40,7 @@ inline MiddlewareFn model_fallback(
                         std::string(fallback_err.what()));
                 }
             }
-            throw;   // all fallbacks exhausted → rethrow primary
+            throw;
         }
     };
 }
