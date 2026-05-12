@@ -49,6 +49,9 @@ class LLMModel<Mistral, embedding_tag> {
         std::vector<std::vector<float>> embeddings(data.size());
         for (auto& item : data) {
             auto idx = item["index"].get<size_t>();
+            if (idx >= embeddings.size())
+                throw Error("mistral embed: index " + std::to_string(idx)
+                    + " out of range (size=" + std::to_string(embeddings.size()) + ")");
             embeddings[idx] = item["embedding"].get<std::vector<float>>();
         }
         return {std::move(embeddings), parsed.value("usage", json::object()), parsed};
@@ -68,6 +71,12 @@ public:
 
     LLMModel(std::string model, std::string api_key)
         : LLMModel(std::move(model), EmbeddingConfig{.api_key = std::move(api_key)}) {}
+
+    explicit LLMModel(ModelConfig cfg = {.model_name = "mistral-embed", .dimensions = 1024})
+        : LLMModel(cfg.model_name.empty() ? "mistral-embed" : cfg.model_name,
+                    EmbeddingConfig{.api_key = cfg.api_key,
+                                    .base_url = cfg.base_url,
+                                    .dimensions = cfg.dimensions ? std::optional<int>(static_cast<int>(cfg.dimensions)) : std::nullopt}) {}
 
     LLMModel(const LLMModel&)            = delete;
     LLMModel& operator=(const LLMModel&) = delete;

@@ -6,6 +6,11 @@
 #include <array>
 #include <string>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 static std::string shell_exec(const std::string& cmd) {
     std::array<char, 256> buf;
     std::string output;
@@ -29,9 +34,9 @@ int main() {
               << "  model_call_limit, tool_call_limit, model_retry,\n"
               << "  context_editing, rationalize, retry\n\n";
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "full_stack",
             // No system_prompt here — middleware injects one.
             .tools = {
@@ -121,9 +126,9 @@ int main() {
                 middleware::rationalize({.large_threshold = 100}),
             },
             .max_iterations = 10,
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     // Single-shot with tools — triggers logging, system_prompt, pii,
     // model_call_limit, tool_call_limit, and potentially rationalize.

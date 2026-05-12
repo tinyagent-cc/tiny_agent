@@ -82,17 +82,24 @@ inline MiddlewareFn pii(PIIConfig cfg) {
             return std::regex_replace(text, *re, "[REDACTED_" + pii_upper + "]");
         };
 
+        auto scrub_variant = [&](std::variant<std::string, std::vector<ContentPart>>& content) {
+            if (auto* s = std::get_if<std::string>(&content))
+                *s = scrub(*s);
+            else if (auto* parts = std::get_if<std::vector<ContentPart>>(&content))
+                for (auto& p : *parts)
+                    if (p.type == "text")
+                        p.text = scrub(p.text);
+        };
+
         if (cfg.apply_to_input)
             for (auto& m : msgs)
                 if (m.role == Role::user)
-                    if (auto* s = std::get_if<std::string>(&m.content))
-                        *s = scrub(*s);
+                    scrub_variant(m.content);
 
         auto resp = next(msgs);
 
         if (cfg.apply_to_output)
-            if (auto* s = std::get_if<std::string>(&resp.message.content))
-                *s = scrub(*s);
+            scrub_variant(resp.message.content);
 
         return resp;
     };

@@ -9,13 +9,13 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "batch_agent",
             .system_prompt = "Reply in exactly one sentence.",
         }
-    };
+    );
 
     std::vector<std::string> questions = {
         "What is the capital of France?",

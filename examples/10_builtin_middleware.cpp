@@ -9,9 +9,9 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "guarded",
             .system_prompt = "You are a helpful assistant.",
             .tools = {
@@ -49,9 +49,9 @@ int main() {
                 // Keep conversation manageable
                 middleware::trim_history(30),
             },
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     std::cout << agent.run("Search for 'C++ middleware patterns'") << "\n";
 }

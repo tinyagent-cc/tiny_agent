@@ -36,9 +36,9 @@ int main() {
 
     // ── 3. Create an agent that uses the retriever as a tool ─────────────
 
-    auto agent = AgentExecutor{
+    auto agent = make_agent(
         init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key}),
-        AgentConfig{
+        {
             .name = "knowledge_agent",
             .system_prompt =
                 "You answer questions using the search_knowledge tool to find "
@@ -48,9 +48,9 @@ int main() {
                 retriever.as_tool("search_knowledge",
                     "Search the knowledge base for relevant information"),
             },
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     auto answer = agent.run(
         "What programming languages are in the knowledge base and who created them?");

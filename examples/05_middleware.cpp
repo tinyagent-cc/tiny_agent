@@ -26,9 +26,9 @@ int main() {
         return next(msgs);
     };
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "guarded_agent",
             .system_prompt = "You are a helpful assistant.",
             .middlewares = {
@@ -38,9 +38,9 @@ int main() {
                 timing,
                 content_filter,
             },
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     std::cout << agent.run("Explain middleware in software in one sentence.") << "\n";
 }

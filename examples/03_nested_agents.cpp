@@ -12,7 +12,7 @@ int main() {
     LLMConfig cfg{.api_key = key};
 
     auto researcher = make_shared_agent(
-        OpenAIChat{"gpt-4o-mini", cfg},
+        OpenAIChat{.model = "gpt-4o-mini", .api_key = key},
         AgentConfig{
             .name = "researcher",
             .system_prompt = "You are a researcher. Provide factual, concise answers.",
@@ -20,7 +20,7 @@ int main() {
     );
 
     auto writer = make_shared_agent(
-        OpenAIChat{"gpt-4o-mini", cfg},
+        OpenAIChat{.model = "gpt-4o-mini", .api_key = key},
         AgentConfig{
             .name = "writer",
             .system_prompt = "You are a creative writer. Take research notes and produce a short, engaging paragraph.",
@@ -28,8 +28,8 @@ int main() {
     );
 
     auto manager = make_shared_agent(
-        OpenAIChat{"gpt-4o", cfg},
-        AgentConfig{
+        OpenAIChat{.model = "gpt-4o", .api_key = key},
+        {
             .name = "manager",
             .system_prompt = "You are a project manager. Delegate research to 'researcher' and writing to 'writer'. "
                              "Combine their outputs into a final answer.",
@@ -37,8 +37,8 @@ int main() {
                 agent_as_tool(researcher, "researcher", "Research factual information about a topic"),
                 agent_as_tool(writer, "writer", "Write an engaging paragraph from research notes"),
             },
-        },
-        Log{std::cerr, LogLevel::debug}
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
     );
 
     auto result = manager->run("Write a short paragraph about the James Webb Space Telescope's latest discoveries.");

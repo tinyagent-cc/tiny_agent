@@ -15,9 +15,9 @@ int main() {
 
     {
         std::cout << "--- Strategy: REDACT ---\n";
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "redact",
                 .system_prompt = "Repeat the user's message back exactly as you receive it. "
                                  "Do not add or change anything.",
@@ -27,7 +27,7 @@ int main() {
                     middleware::pii({.pii_type = "phone", .strategy = "redact"}),
                 },
             }
-        };
+        );
 
         std::string input = "Contact john.doe@example.com, SSN 123-45-6789, phone +1 555-123-4567";
         std::cout << "  Input:  " << input << "\n";
@@ -38,9 +38,9 @@ int main() {
 
     {
         std::cout << "--- Strategy: MASK ---\n";
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "mask",
                 .system_prompt = "Repeat the user's message back exactly as you receive it.",
                 .middlewares = {
@@ -48,7 +48,7 @@ int main() {
                     middleware::pii({.pii_type = "email",       .strategy = "mask"}),
                 },
             }
-        };
+        );
 
         std::string input = "Card: 4111-1111-1111-1234, email: secret@corp.com";
         std::cout << "  Input:  " << input << "\n";
@@ -59,16 +59,16 @@ int main() {
 
     {
         std::cout << "--- Strategy: BLOCK ---\n";
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "block",
                 .system_prompt = "You are a helpful assistant.",
                 .middlewares = {
                     middleware::pii({.pii_type = "ssn", .strategy = "block"}),
                 },
             }
-        };
+        );
 
         try {
             agent.run("My SSN is 999-88-7777, please store it.");
@@ -82,9 +82,9 @@ int main() {
 
     {
         std::cout << "--- Output Scrubbing ---\n";
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "output_scrub",
                 .system_prompt = "Generate a fictional person profile: name, email "
                                  "(use @example.com), and US phone number.",
@@ -95,7 +95,7 @@ int main() {
                                     .apply_to_input = false, .apply_to_output = true}),
                 },
             }
-        };
+        );
 
         std::cout << "  (LLM generates a profile, PII redacted in output)\n";
         std::cout << "  Output: " << agent.run("Generate a profile.") << "\n";

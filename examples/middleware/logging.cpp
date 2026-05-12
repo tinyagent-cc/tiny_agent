@@ -5,15 +5,20 @@
 #include <cstdio>
 #include <array>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 int main() {
     using namespace tiny_agent;
 
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "shell_agent",
             .system_prompt = "You are a system admin assistant. Use the exec tool to run commands. "
                              "Report the output concisely.",
@@ -39,9 +44,9 @@ int main() {
                 // for every LLM call. Output goes to stderr at debug/trace level.
                 middleware::logging(Log{std::cerr, LogLevel::trace}),
             },
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     std::cout << "=== Logging Middleware Demo ===\n"
               << "(Watch stderr for per-call middleware logs)\n\n";

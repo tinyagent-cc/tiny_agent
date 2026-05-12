@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <cstring>
+#include <algorithm>
 #endif
 
 namespace tiny_agent::mcp {
@@ -25,6 +26,8 @@ class StdioTransport {
     pid_t pid_     = -1;
     int   to_fd_   = -1;
     int   from_fd_ = -1;
+    std::string read_buf_;
+    static constexpr std::size_t buf_size_ = 8192;
 
 public:
     StdioTransport(const std::string& command, const std::vector<std::string>& args) {
@@ -72,35 +75,46 @@ public:
     { o.pid_ = -1; o.to_fd_ = -1; o.from_fd_ = -1; }
 
     StdioTransport& operator=(StdioTransport&& o) noexcept {
-        std::swap(pid_, o.pid_);
-        std::swap(to_fd_, o.to_fd_);
-        std::swap(from_fd_, o.from_fd_);
+        if (this == &o) return *this;
+        if (to_fd_ >= 0) close(to_fd_);
+        if (from_fd_ >= 0) close(from_fd_);
+        if (pid_ > 0) { kill(pid_, SIGTERM); waitpid(pid_, nullptr, 0); }
+        pid_ = o.pid_; o.pid_ = -1;
+        to_fd_ = o.to_fd_; o.to_fd_ = -1;
+        from_fd_ = o.from_fd_; o.from_fd_ = -1;
         return *this;
     }
 
     void send(const json& request) {
         auto data = request.dump() + "\n";
-        auto written = ::write(to_fd_, data.c_str(), data.size());
-        if (written < 0) throw MCPError("write to MCP process failed");
+        const char* ptr = data.data();
+        std::size_t remaining = data.size();
+        while (remaining > 0) {
+            auto written = ::write(to_fd_, ptr, remaining);
+            if (written < 0) throw MCPError("write to MCP process failed");
+            ptr += written;
+            remaining -= static_cast<std::size_t>(written);
+        }
     }
 
     json receive() {
-        constexpr int max_attempts = 1000;
+        constexpr int max_attempts = 100;
         for (int attempt = 0; attempt < max_attempts; ++attempt) {
-            std::string line;
-            char c;
-            while (true) {
-                auto n = ::read(from_fd_, &c, 1);
-                if (n <= 0) throw MCPError("MCP process closed");
-                if (c == '\n') break;
-                line += c;
+            auto nl = read_buf_.find('\n');
+            if (nl != std::string::npos) {
+                std::string line = read_buf_.substr(0, nl);
+                read_buf_.erase(0, nl + 1);
+                if (line.empty()) continue;
+                try { return json::parse(line); }
+                catch (...) { continue; }
             }
-            if (line.empty()) continue;
-            try { return json::parse(line); }
-            catch (...) { continue; }
+            char buf[buf_size_];
+            auto n = ::read(from_fd_, buf, sizeof(buf));
+            if (n <= 0) throw MCPError("MCP process closed");
+            read_buf_.append(buf, static_cast<std::size_t>(n));
         }
         throw MCPError("MCP transport: no valid JSON after "
-            + std::to_string(max_attempts) + " lines");
+            + std::to_string(max_attempts) + " read attempts");
     }
 };
 

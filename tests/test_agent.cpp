@@ -26,7 +26,11 @@ static void load_dotenv(const std::string& path) {
         auto val = line.substr(pos + 1);
         while (!val.empty() && std::isspace(static_cast<unsigned char>(val.back())))
             val.pop_back();
+#ifdef _WIN32
+        _putenv_s(key.c_str(), val.c_str());
+#else
         setenv(key.c_str(), val.c_str(), 0);
+#endif
     }
 }
 
@@ -85,19 +89,19 @@ TEST_CASE("schema: wrong type is rejected") {
 
 TEST_CASE("openai: basic chat") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", keys().openai},
-        AgentConfig{}
-    };
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai},
+        {}
+    );
     auto result = agent.run("Reply with exactly: PONG");
     CHECK(result.find("PONG") != std::string::npos);
 }
 
 TEST_CASE("openai: tool calling with schema validation") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", keys().openai},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai},
+        {
             .system_prompt = "Use the add tool to compute the answer.",
             .tools = {
                 DynamicTool::create("add", "Add two numbers",
@@ -107,16 +111,16 @@ TEST_CASE("openai: tool calling with schema validation") {
                     }, two_operand_schema)
             },
         }
-    };
+    );
     CHECK(agent.run("What is 17 + 25?").find("42") != std::string::npos);
 }
 
 TEST_CASE("openai: multi-turn chat") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", keys().openai},
-        AgentConfig{.system_prompt = "You are a concise assistant."}
-    };
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai},
+        {.system_prompt = "You are a concise assistant."}
+    );
     auto first = agent.chat("Say hello");
     CHECK_FALSE(first.empty());
     CHECK(agent.history().size() >= 2);
@@ -128,12 +132,13 @@ TEST_CASE("openai: multi-turn chat") {
 
 TEST_CASE("openai: generation parameters") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto llm = OpenAIChat{"gpt-4o-mini", LLMConfig{
+    auto llm = OpenAIChat{
+        .model = "gpt-4o-mini",
         .api_key = keys().openai,
-        .temperature = 0.0,
+        .temperature_ = 0.0,
         .max_tokens = 10,
         .seed = 42,
-    }};
+    };
     auto resp = llm.chat({Message::user("Say hello")});
     CHECK_FALSE(resp.message.text().empty());
     CHECK(resp.usage.contains("total_tokens"));
@@ -143,19 +148,19 @@ TEST_CASE("openai: generation parameters") {
 
 TEST_CASE("anthropic: basic chat") {
     REQUIRE_FALSE(keys().claude.empty());
-    auto agent = AgentExecutor{
-        AnthropicChat{"claude-sonnet-4-20250514", keys().claude},
-        AgentConfig{}
-    };
+    auto agent = make_agent(
+        AnthropicChat{.model="claude-sonnet-4-20250514", .api_key=keys().claude},
+        {}
+    );
     auto result = agent.run("Reply with exactly: PONG");
     CHECK(result.find("PONG") != std::string::npos);
 }
 
 TEST_CASE("anthropic: tool calling with schema validation") {
     REQUIRE_FALSE(keys().claude.empty());
-    auto agent = AgentExecutor{
-        AnthropicChat{"claude-sonnet-4-20250514", keys().claude},
-        AgentConfig{
+    auto agent = make_agent(
+        AnthropicChat{.model="claude-sonnet-4-20250514", .api_key=keys().claude},
+        {
             .system_prompt = "Use the multiply tool.",
             .tools = {
                 DynamicTool::create("multiply", "Multiply two numbers",
@@ -165,7 +170,7 @@ TEST_CASE("anthropic: tool calling with schema validation") {
                     }, two_operand_schema)
             },
         }
-    };
+    );
     CHECK(agent.run("What is 6 * 7?").find("42") != std::string::npos);
 }
 
@@ -173,19 +178,19 @@ TEST_CASE("anthropic: tool calling with schema validation") {
 
 TEST_CASE("gemini: basic chat") {
     REQUIRE_FALSE(keys().gemini.empty());
-    auto agent = AgentExecutor{
-        GeminiChat{"gemini-2.0-flash", keys().gemini},
-        AgentConfig{}
-    };
+    auto agent = make_agent(
+        GeminiChat{.model="gemini-2.0-flash", .api_key=keys().gemini},
+        {}
+    );
     auto result = agent.run("Reply with exactly: PONG");
     CHECK(result.find("PONG") != std::string::npos);
 }
 
 TEST_CASE("gemini: tool calling with schema validation") {
     REQUIRE_FALSE(keys().gemini.empty());
-    auto agent = AgentExecutor{
-        GeminiChat{"gemini-2.0-flash", keys().gemini},
-        AgentConfig{
+    auto agent = make_agent(
+        GeminiChat{.model="gemini-2.0-flash", .api_key=keys().gemini},
+        {
             .system_prompt = "Use the subtract tool to compute the answer. Always use the tool.",
             .tools = {
                 DynamicTool::create("subtract", "Subtract b from a",
@@ -195,7 +200,7 @@ TEST_CASE("gemini: tool calling with schema validation") {
                     }, two_operand_schema)
             },
         }
-    };
+    );
     CHECK(agent.run("What is 100 - 58?").find("42") != std::string::npos);
 }
 
@@ -203,9 +208,9 @@ TEST_CASE("gemini: tool calling with schema validation") {
 
 TEST_CASE("agent: tool error is handled gracefully") {
     REQUIRE_FALSE(keys().openai.empty());
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", keys().openai},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai},
+        {
             .system_prompt = "Call the fail tool, then report the error you received.",
             .tools = {
                 DynamicTool::create("fail", "Always fails",
@@ -213,14 +218,14 @@ TEST_CASE("agent: tool error is handled gracefully") {
                     {{"type", "object"}, {"properties", json::object()}})
             },
         }
-    };
+    );
     auto result = agent.run("Call the fail tool");
     CHECK_FALSE(result.empty());
 }
 
 TEST_CASE("agent: AnyChat type erasure") {
     REQUIRE_FALSE(keys().openai.empty());
-    AnyChat any{OpenAIChat{"gpt-4o-mini", keys().openai}};
+    AnyChat any{OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai}};
     CHECK(any.model_name() == "gpt-4o-mini");
 
     auto resp = any.chat({Message::user("Reply with exactly: ERASED")});
@@ -229,8 +234,8 @@ TEST_CASE("agent: AnyChat type erasure") {
 
 TEST_CASE("agent: AgentExecutor<deep_agent_tag, AnyChat> works") {
     REQUIRE_FALSE(keys().openai.empty());
-    AnyChat any{OpenAIChat{"gpt-4o-mini", keys().openai}};
-    auto agent = AgentExecutor{std::move(any), AgentConfig{}};
+    AnyChat any{OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai}};
+    auto agent = make_agent(std::move(any), {});
     auto result = agent.run("Reply with exactly: DYNAMIC");
     CHECK(result.find("DYNAMIC") != std::string::npos);
 }
@@ -238,11 +243,10 @@ TEST_CASE("agent: AgentExecutor<deep_agent_tag, AnyChat> works") {
 TEST_CASE("agent: Log captures output at debug level") {
     REQUIRE_FALSE(keys().openai.empty());
     std::ostringstream oss;
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", keys().openai},
-        AgentConfig{},
-        Log{oss, LogLevel::debug}
-    };
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai},
+        {.logger = Log{oss, LogLevel::debug}}
+    );
     agent.run("Say hello");
     CHECK(oss.str().find("iteration 1") != std::string::npos);
     CHECK(oss.str().find("done") != std::string::npos);
@@ -253,16 +257,16 @@ TEST_CASE("agent: cross-provider sub-agent delegation") {
     REQUIRE_FALSE(keys().gemini.empty());
 
     auto worker = make_shared_agent(
-        GeminiChat{"gemini-2.0-flash", keys().gemini},
-        AgentConfig{
+        GeminiChat{.model="gemini-2.0-flash", .api_key=keys().gemini},
+        {
             .name = "gemini_worker",
             .system_prompt = "Answer factual questions concisely.",
         }
     );
 
     auto manager = make_shared_agent(
-        OpenAIChat{"gpt-4o-mini", keys().openai},
-        AgentConfig{
+        OpenAIChat{.model="gpt-4o-mini", .api_key=keys().openai},
+        {
             .name = "manager",
             .system_prompt = "Delegate questions to gemini_worker and relay the answer.",
             .tools = {agent_as_tool(worker, "gemini_worker", "Answer factual questions")},

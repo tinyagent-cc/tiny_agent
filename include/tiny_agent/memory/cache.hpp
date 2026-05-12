@@ -19,8 +19,27 @@ class ToolCache {
     Store store_;
 
     static std::string make_key(const std::string& name, const json& args) {
-        return name + '\0' + args.dump(-1, ' ', false,
-                                        json::error_handler_t::replace);
+        auto canonical = args;
+        std::function<void(json&)> sort_keys;
+        sort_keys = [&](json& j) {
+            if (j.is_object()) {
+                json sorted = json::object();
+                std::vector<std::string> keys;
+                for (auto& [k, v] : j.items()) keys.push_back(k);
+                std::sort(keys.begin(), keys.end());
+                for (auto& k : keys) {
+                    auto val = std::move(j[k]);
+                    sort_keys(val);
+                    sorted[k] = std::move(val);
+                }
+                j = std::move(sorted);
+            } else if (j.is_array()) {
+                for (auto& elem : j) sort_keys(elem);
+            }
+        };
+        sort_keys(canonical);
+        return name + '\0' + canonical.dump(-1, ' ', false,
+                                            json::error_handler_t::replace);
     }
 
 public:

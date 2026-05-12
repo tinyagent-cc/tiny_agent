@@ -28,9 +28,9 @@ int main() {
     {
         std::cout << "--- Model Call Limit (limit=3) ---\n";
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "limited",
                 .system_prompt = "You are a math assistant. Perform exactly ONE addition per step. "
                                  "Never batch multiple operations.",
@@ -39,9 +39,9 @@ int main() {
                     middleware::model_call_limit({.limit = 3}),
                 },
                 .max_iterations = 10,
-            },
-            Log{std::cerr, LogLevel::info}
-        };
+                .logger = Log{std::cerr, LogLevel::info}
+            }
+        );
 
         auto result = agent.run(
             "Compute step by step: ((1+2)+3)+4)+5. Do one add() per step.");
@@ -56,9 +56,9 @@ int main() {
     {
         std::cout << "--- Tool Call Limit (limit=2, exit_behavior=end) ---\n";
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "tool_limited",
                 .system_prompt = "You are a math assistant. Perform one addition per step.",
                 .tools = {add_tool},
@@ -69,9 +69,9 @@ int main() {
                     }),
                 },
                 .max_iterations = 10,
-            },
-            Log{std::cerr, LogLevel::info}
-        };
+                .logger = Log{std::cerr, LogLevel::info}
+            }
+        );
 
         auto result = agent.run(
             "Compute step by step: (1+2), then (3+4), then (5+6), then (7+8). "
@@ -95,9 +95,9 @@ int main() {
              {"properties", {{"a", {{"type", "number"}}}, {"b", {{"type", "number"}}}}},
              {"required", {"a", "b"}}});
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "per_tool",
                 .system_prompt = "You are a math assistant. Perform one operation per step.",
                 .tools = {add_tool, multiply_tool},
@@ -109,9 +109,9 @@ int main() {
                     }),
                 },
                 .max_iterations = 10,
-            },
-            Log{std::cerr, LogLevel::info}
-        };
+                .logger = Log{std::cerr, LogLevel::info}
+            }
+        );
 
         auto result = agent.run(
             "Compute: add(2,3), then multiply the result by 4, then multiply by 5. "

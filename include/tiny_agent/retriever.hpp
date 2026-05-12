@@ -54,11 +54,13 @@ public:
     const StoreType& store() const { return store_; }
 
     DynamicTool as_tool(std::string name, std::string description) {
+        auto self = this;
+        auto default_k = default_top_k_;
         return DynamicTool::create(std::move(name), std::move(description),
-            [this](const json& args) -> json {
+            [self, default_k](const json& args) -> json {
                 auto q = args.at("query").get<std::string>();
-                int k  = args.value("top_k", default_top_k_);
-                auto results = query(q, k);
+                int k  = args.value("top_k", default_k);
+                auto results = self->query(q, k);
 
                 json out = json::array();
                 for (auto& r : results) {

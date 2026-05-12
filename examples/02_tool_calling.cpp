@@ -10,9 +10,9 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "math_agent",
             .system_prompt = "You are a math assistant. Use the provided tools to compute answers.",
             .tools = {
@@ -32,9 +32,9 @@ int main() {
                      {"properties", {{"x", {{"type", "number"}}}}},
                      {"required", {"x"}}}),
             },
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     auto answer = agent.run("What is sqrt(144) + sqrt(256)?");
     std::cout << "Answer: " << answer << "\n";

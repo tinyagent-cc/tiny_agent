@@ -66,6 +66,12 @@ public:
     LLMModel(std::string model, std::string api_key)
         : LLMModel(std::move(model), EmbeddingConfig{.api_key = std::move(api_key)}) {}
 
+    explicit LLMModel(ModelConfig cfg = {.model_name = "embed-english-v3.0", .dimensions = 1024})
+        : LLMModel(cfg.model_name.empty() ? "embed-english-v3.0" : cfg.model_name,
+                    EmbeddingConfig{.api_key = cfg.api_key,
+                                    .base_url = cfg.base_url,
+                                    .dimensions = cfg.dimensions ? std::optional<int>(static_cast<int>(cfg.dimensions)) : std::nullopt}) {}
+
     LLMModel(const LLMModel&)            = delete;
     LLMModel& operator=(const LLMModel&) = delete;
     LLMModel(LLMModel&&)                 = default;

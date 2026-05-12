@@ -39,8 +39,45 @@ public:
               &space_, max_elements, M, ef_construction))
     {}
 
-    HnswVectorStore(HnswVectorStore&&) = default;
-    HnswVectorStore& operator=(HnswVectorStore&&) = default;
+    HnswVectorStore(HnswVectorStore&& o) noexcept
+        : dimensions_(o.dimensions_)
+        , space_(o.dimensions_)
+        , index_(std::make_unique<hnswlib::HierarchicalNSW<float>>(
+              &space_, o.index_ ? o.index_->max_elements_ : 10000,
+              o.index_ ? o.index_->M_ : 16,
+              o.index_ ? o.index_->ef_construction_ : 200))
+        , docs_(std::move(o.docs_))
+        , next_label_(o.next_label_)
+    {
+        o.next_label_ = 0;
+        o.dimensions_ = 0;
+        for (auto& [label, doc] : docs_) {
+            auto norm = doc.embedding;
+            normalize(norm);
+            index_->addPoint(norm.data(), label);
+        }
+    }
+
+    HnswVectorStore& operator=(HnswVectorStore&& o) noexcept {
+        if (this == &o) return *this;
+        dimensions_ = o.dimensions_;
+        space_ = hnswlib::InnerProductSpace(dimensions_);
+        auto max_elem = o.index_ ? o.index_->max_elements_ : 10000;
+        auto M = o.index_ ? o.index_->M_ : 16;
+        auto ef_c = o.index_ ? o.index_->ef_construction_ : 200;
+        index_ = std::make_unique<hnswlib::HierarchicalNSW<float>>(
+            &space_, max_elem, M, ef_c);
+        docs_ = std::move(o.docs_);
+        for (auto& [label, doc] : docs_) {
+            auto norm = doc.embedding;
+            normalize(norm);
+            index_->addPoint(norm.data(), label);
+        }
+        next_label_ = o.next_label_;
+        o.next_label_ = 0;
+        o.dimensions_ = 0;
+        return *this;
+    }
 
     void add(const std::string& id, const std::string& content,
              const std::vector<float>& embedding, const json& metadata) {

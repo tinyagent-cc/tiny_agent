@@ -28,9 +28,9 @@ int main() {
     std::cout << "=== Context Editing Middleware Demo ===\n"
               << "(Old tool results replaced with [cleared] when token budget exceeded)\n\n";
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "analyst",
             .system_prompt = "You are a research analyst. Use read_report to gather data. "
                              "After reading all requested reports, provide a brief combined summary.",
@@ -53,9 +53,9 @@ int main() {
                     .placeholder = "[cleared — old result removed to save context]",
                 }),
             },
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     auto result = agent.run(
         "Read reports on: 'solar energy', 'wind power', 'battery storage', and "
@@ -66,9 +66,9 @@ int main() {
     // Show the same behavior in chat mode so we can inspect history
     std::cout << "\n--- Chat mode (inspectable history) ---\n";
 
-    auto chat_agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto chat_agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "chat_analyst",
             .system_prompt = "You are a research assistant. Read reports when asked. "
                              "Respond briefly.",
@@ -87,8 +87,8 @@ int main() {
                     .placeholder = "[cleared]",
                 }),
             },
-        },
-    };
+        }
+    );
 
     chat_agent.chat("Read the report on 'solar energy'.");
     chat_agent.chat("Now read the report on 'wind power'.");

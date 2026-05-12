@@ -1,14 +1,4 @@
 #pragma once
-// ═══════════════════════════════════════════════════════════════════════════════
-//  runnable.hpp  —  Core Runnable concept + composition primitives
-//
-//  Mirrors LangChain's Runnable[Input, Output] interface.
-//    Runnable<T, I, O>   — concept: anything that can invoke/batch/stream
-//    RunnableLambda      — wraps any callable into a Runnable
-//    RunnableSequence    — chains N runnables via parameter pack; supports |
-//    RunnableParallel    — fan-out to N runnables, collects into tuple
-// ═══════════════════════════════════════════════════════════════════════════════
-
 #include <concepts>
 #include <functional>
 #include <string>
@@ -29,18 +19,13 @@ concept Runnable =
     requires { typename T::input_t; typename T::output_t; } &&
     std::same_as<typename T::input_t,  Input>               &&
     std::same_as<typename T::output_t, Output>              &&
-    requires(T r,
-             Input                             in,
-             std::vector<Input>               batch_in,
-             std::function<void(Output)>      cb,
-             const RunConfig&                 cfg)
+    requires(T r, Input in, std::vector<Input> batch_in,
+             std::function<void(Output)> cb, const RunConfig& cfg)
     {
         { r.invoke(in) }         -> std::convertible_to<Output>;
         { r.batch(batch_in) }    -> std::convertible_to<std::vector<Output>>;
         { r.stream(in, cb) }     -> std::same_as<void>;
     };
-
-// ─── RunnableLambda ───────────────────────────────────────────────────────────
 
 template<typename Fn, typename Input, typename Output>
 class RunnableLambda {
@@ -51,19 +36,17 @@ public:
 
     explicit RunnableLambda(Fn fn) : fn_(std::move(fn)) {}
 
-    Output invoke(Input in, const RunConfig& = {}) {
-        return fn_(std::move(in));
-    }
+    Output invoke(Input in, const RunConfig& = {}) { return fn_(std::move(in)); }
 
-    std::vector<Output> batch(std::vector<Input> inputs, const RunConfig& cfg = {}) {
+    std::vector<Output> batch(std::vector<Input> inputs, const RunConfig& = {}) {
         std::vector<Output> out;
         out.reserve(inputs.size());
-        for (auto& i : inputs) out.push_back(invoke(std::move(i), cfg));
+        for (auto& i : inputs) out.push_back(fn_(std::move(i)));
         return out;
     }
 
-    void stream(Input in, std::function<void(Output)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(in), cfg));
+    void stream(Input in, std::function<void(Output)> cb, const RunConfig& = {}) {
+        cb(fn_(std::move(in)));
     }
 };
 
@@ -71,8 +54,6 @@ template<typename Input, typename Output, typename Fn>
 auto make_runnable(Fn&& fn) {
     return RunnableLambda<std::decay_t<Fn>, Input, Output>(std::forward<Fn>(fn));
 }
-
-// ─── RunnableSequence ─────────────────────────────────────────────────────────
 
 namespace detail {
 
@@ -108,15 +89,15 @@ public:
         return detail::thread_steps(steps_, std::move(in));
     }
 
-    std::vector<output_t> batch(std::vector<input_t> inputs, const RunConfig& cfg = {}) {
+    std::vector<output_t> batch(std::vector<input_t> inputs, const RunConfig& = {}) {
         std::vector<output_t> out;
         out.reserve(inputs.size());
-        for (auto& i : inputs) out.push_back(invoke(std::move(i), cfg));
+        for (auto& i : inputs) out.push_back(invoke(std::move(i)));
         return out;
     }
 
-    void stream(input_t in, std::function<void(output_t)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(in), cfg));
+    void stream(input_t in, std::function<void(output_t)> cb, const RunConfig& = {}) {
+        cb(invoke(std::move(in)));
     }
 };
 
@@ -129,14 +110,12 @@ auto operator|(A a, B b) -> RunnableSequence<A, B> {
     return RunnableSequence<A, B>(std::move(a), std::move(b));
 }
 
-// ─── RunnableParallel ─────────────────────────────────────────────────────────
-
 template<typename... Branches>
 class RunnableParallel {
     std::tuple<Branches...> branches_;
 
     template<std::size_t... Is>
-    auto invoke_all(const typename std::tuple_element_t<0,decltype(branches_)>::input_t& in,
+    auto invoke_all(const typename std::tuple_element_t<0, decltype(branches_)>::input_t& in,
                     std::index_sequence<Is...>) {
         return std::make_tuple(std::get<Is>(branches_).invoke(in)...);
     }
@@ -151,15 +130,15 @@ public:
         return invoke_all(in, std::index_sequence_for<Branches...>{});
     }
 
-    std::vector<output_t> batch(std::vector<input_t> inputs, const RunConfig& cfg = {}) {
+    std::vector<output_t> batch(std::vector<input_t> inputs, const RunConfig& = {}) {
         std::vector<output_t> out;
         out.reserve(inputs.size());
-        for (auto& i : inputs) out.push_back(invoke(i, cfg));
+        for (auto& i : inputs) out.push_back(invoke(i));
         return out;
     }
 
-    void stream(input_t in, std::function<void(output_t)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(in), cfg));
+    void stream(input_t in, std::function<void(output_t)> cb, const RunConfig& = {}) {
+        cb(invoke(std::move(in)));
     }
 };
 

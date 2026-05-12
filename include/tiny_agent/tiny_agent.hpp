@@ -35,6 +35,9 @@
 // Retriever
 #include "retriever.hpp"
 
+// Agents (LangChain-aligned)
+#include "agents/all.hpp"
+
 // Chat providers — include the ones you compile against:
 // #include "providers/openai.hpp"
 // #include "providers/anthropic.hpp"

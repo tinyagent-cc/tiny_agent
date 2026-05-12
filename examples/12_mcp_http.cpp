@@ -26,15 +26,15 @@ int main(int argc, char* argv[]) {
     for (auto& t : tools)
         std::cout << "  - " << t.schema.name << ": " << t.schema.description << "\n";
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "mcp_http_agent",
             .system_prompt = "You are a helpful assistant with access to external tools via MCP.",
             .tools = std::move(tools),
-        },
-        Log{std::cerr, LogLevel::debug}
-    };
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
+    );
 
     auto result = agent.run("What tools do you have available? Briefly describe each.");
     std::cout << "\n" << result << "\n";

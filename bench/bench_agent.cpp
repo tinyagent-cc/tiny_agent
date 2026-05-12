@@ -432,9 +432,9 @@ static std::vector<BenchResult> bench_builtin_middleware() {
 
     // Summarize (extractive)
     for (std::size_t n : {20, 50, 100}) {
-        middleware::Summarize<100, 4> mw;
+        auto mw = middleware::summarize({.trigger_tokens = 100, .keep_recent = 4});
         results.push_back(bench(
-            "Summarize<100,4> (" + std::to_string(n) + " msgs)", [&] {
+            "summarize<100,4> (" + std::to_string(n) + " msgs)", [&] {
                 auto msgs = make_history(n, true);
                 auto r = mw(msgs, terminal_passthrough);
                 (void)r;

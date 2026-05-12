@@ -43,7 +43,7 @@ inline AnyEmbedding init_embeddings(const std::string& model_string,
     if (provider == "openai")
         return AnyEmbedding{LLMModel<OpenAI, embedding_tag>{model, std::move(config)}};
     if (provider == "gemini")
-        return AnyEmbedding{LLMModel<Gemini, embedding_tag>{model, std::move(config)}};
+        return AnyEmbedding{LLMModel<Gemini, embedding_tag>::from_config(model, std::move(config))};
     if (provider == "mistral")
         return AnyEmbedding{LLMModel<Mistral, embedding_tag>{model, std::move(config)}};
     if (provider == "cohere")

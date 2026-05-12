@@ -48,13 +48,13 @@ struct DynamicTool {
                 std::forward<Fn>(f)};
     }
 
-    template<typename Ret, typename Fn>
+    template<typename Fn>
         requires std::invocable<Fn, const json&> &&
                  std::convertible_to<std::invoke_result_t<Fn, const json&>, json>
     static DynamicTool typed(std::string name, std::string desc, Fn&& f,
                              json params = json::object()) {
         return create(std::move(name), std::move(desc),
-            [fn = std::forward<Fn>(f)](const json& args) -> json {
+            [fn = std::decay_t<Fn>(f)](const json& args) -> json {
                 return json(fn(args));
             },
             std::move(params));

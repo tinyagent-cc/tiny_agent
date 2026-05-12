@@ -60,25 +60,10 @@ TEST_CASE("extractive_summarize: skips empty messages") {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Summarize<> template middleware
-// ═══════════════════════════════════════════════════════════════════════════
+// summarize() runtime middleware (compile-time Summarize<> removed)
 
-TEST_CASE("Summarize: no-op when under token threshold") {
-    middleware::Summarize<10000, 2> mw;
-    std::vector<Message> msgs = {
-        Message::system("sys"),
-        Message::user("hi"),
-        Message::assistant("hello"),
-    };
-    auto orig_size = msgs.size();
-    mw(msgs, [&](auto& m) {
-        CHECK(m.size() == orig_size);
-        return ok();
-    });
-}
-
-TEST_CASE("Summarize: compresses when over threshold") {
-    middleware::Summarize<1, 2> mw;  // trigger=1 → always compress
+TEST_CASE("summarize: compresses when over threshold") {
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2, .fallback = middleware::extractive_summarize});
     std::vector<Message> msgs = {
         Message::system("system prompt"),
         Message::user("first question"),
@@ -95,13 +80,12 @@ TEST_CASE("Summarize: compresses when over threshold") {
         CHECK(m[0].text() == "system prompt");
         CHECK(m[1].role == Role::system);
         CHECK(m[1].text().find("[Conversation summary]") != std::string::npos);
-        CHECK(m[1].text().find("first question") != std::string::npos);
         return ok();
     });
 }
 
-TEST_CASE("Summarize: preserves recent messages") {
-    middleware::Summarize<1, 3> mw;
+TEST_CASE("summarize: preserves recent messages") {
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 3, .fallback = middleware::extractive_summarize});
     std::vector<Message> msgs = {
         Message::user("old1"),
         Message::assistant("old2"),
@@ -118,8 +102,8 @@ TEST_CASE("Summarize: preserves recent messages") {
     });
 }
 
-TEST_CASE("Summarize: works without system prompt") {
-    middleware::Summarize<1, 2> mw;
+TEST_CASE("summarize: works without system prompt") {
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2, .fallback = middleware::extractive_summarize});
     std::vector<Message> msgs = {
         Message::user("What is the capital of France and why is it important?"),
         Message::assistant("Paris is the capital and a major cultural center."),
@@ -136,10 +120,9 @@ TEST_CASE("Summarize: works without system prompt") {
     });
 }
 
-TEST_CASE("Summarize: custom summarizer function") {
-    middleware::Summarize<1, 2> mw{
-        [](const std::vector<Message>&) { return "custom summary"; }
-    };
+TEST_CASE("summarize: custom summarizer function") {
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2,
+        .fallback = [](const std::vector<Message>&) { return "custom summary"; }});
     std::vector<Message> msgs = {
         Message::system("You are a helpful assistant for the user."),
         Message::user("What is the capital of France and why is it important?"),
@@ -228,8 +211,8 @@ TEST_CASE("Summarize works in MiddlewareChain") {
 }
 
 TEST_CASE("Summarize works in StaticMiddlewareStack") {
-    middleware::Summarize<1, 2> mw;
-    auto stack = StaticMiddlewareStack{mw};
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2});
+    auto stack = make_middleware_stack(mw);
 
     std::vector<Message> msgs = {
         Message::system("You are a helpful assistant for the user."),

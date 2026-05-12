@@ -13,10 +13,10 @@ int main() {
     auto llm = init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key});
 
     // Works with AgentExecutor<deep_agent_tag, AnyChat> seamlessly.
-    auto agent = AgentExecutor{std::move(llm), AgentConfig{
+    auto agent = make_agent(std::move(llm), {
         .name = "dynamic_agent",
         .system_prompt = "You are a concise assistant.",
-    }};
+    });
 
     std::cout << agent.run("Explain init_chat_model in one sentence.") << "\n";
 

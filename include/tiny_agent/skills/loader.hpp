@@ -25,7 +25,19 @@ public:
             return {meta, content};
         }
 
-        auto end_marker = content.find("\n---", 3);
+        // Find closing --- on its own line (with optional trailing whitespace)
+        auto end_marker = std::string::npos;
+        auto search_pos = 3;
+        while (true) {
+            auto found = content.find("\n---", search_pos);
+            if (found == std::string::npos) break;
+            auto rest = content.substr(found + 4);
+            if (rest.empty() || rest[0] == '\n' || rest[0] == '\r' || rest[0] == ' ') {
+                end_marker = found;
+                break;
+            }
+            search_pos = found + 4;
+        }
         if (end_marker == std::string::npos) {
             return {meta, content};
         }

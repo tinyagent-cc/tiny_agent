@@ -32,7 +32,8 @@ inline MiddlewareFn tool_call_limit(ToolCallLimitConfig cfg = {}) {
             if (!cfg.tool_name || tc.name == *cfg.tool_name)
                 ++matching;
 
-        int total = count->fetch_add(matching) + matching;
+        int prev = count->fetch_add(matching);
+        int total = prev + matching;
 
         if (total > cfg.limit) {
             if (cfg.exit_behavior == "error")
@@ -48,7 +49,7 @@ inline MiddlewareFn tool_call_limit(ToolCallLimitConfig cfg = {}) {
 
             // "continue" — strip only the exceeded calls, keep the rest
             if (cfg.tool_name) {
-                int allowed = cfg.limit - (total - matching);
+                int allowed = cfg.limit - prev;
                 std::vector<ToolCall> kept;
                 int seen = 0;
                 for (auto& tc : resp.message.tool_calls) {
@@ -60,7 +61,7 @@ inline MiddlewareFn tool_call_limit(ToolCallLimitConfig cfg = {}) {
                 }
                 resp.message.tool_calls = std::move(kept);
             } else {
-                int allowed = cfg.limit - (total - matching);
+                int allowed = cfg.limit - prev;
                 if (allowed < 0) allowed = 0;
                 resp.message.tool_calls.resize(
                     static_cast<std::size_t>(std::min(

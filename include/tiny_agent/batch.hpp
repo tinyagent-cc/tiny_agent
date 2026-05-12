@@ -41,7 +41,7 @@ struct Config {
 namespace detail {
 
 template<is_chat LLMType>
-ItemResult process_one(AgentExecutor<deep_agent_tag, LLMType>& agent, std::size_t index,
+ItemResult process_one(agents::DeepAgent<LLMType>& agent, std::size_t index,
                        const std::string& raw_input,
                        const Config& cfg, const Hooks& hooks, const Log& log) {
     std::string input = raw_input;
@@ -69,7 +69,7 @@ ItemResult process_one(AgentExecutor<deep_agent_tag, LLMType>& agent, std::size_
                 should_retry = hooks.on_error(index, input, ex, attempt) && can_retry;
 
             if (should_retry) {
-                auto delay = cfg.retry_delay * (1 << (attempt - 1));
+                auto delay = cfg.retry_delay * (static_cast<long long>(1) << (attempt - 1));
                 log.info("batch", "[" + std::to_string(index) + "] retrying in "
                     + std::to_string(delay.count()) + "ms");
                 std::this_thread::sleep_for(delay);
@@ -89,7 +89,7 @@ ItemResult process_one(AgentExecutor<deep_agent_tag, LLMType>& agent, std::size_
 } // namespace detail
 
 template<is_chat LLMType>
-std::vector<ItemResult> run(AgentExecutor<deep_agent_tag, LLMType>& agent,
+std::vector<ItemResult> run(agents::DeepAgent<LLMType>& agent,
                             const std::vector<std::string>& inputs,
                             Config config = {}, Hooks hooks = {},
                             Log log = {}) {
@@ -118,7 +118,7 @@ std::vector<ItemResult> run(AgentExecutor<deep_agent_tag, LLMType>& agent,
 
 template<is_chat LLMType>
 class Iterator {
-    AgentExecutor<deep_agent_tag, LLMType>* agent_;
+    agents::DeepAgent<LLMType>* agent_;
     std::vector<std::string> inputs_;
     Config  config_;
     Hooks   hooks_;
@@ -126,7 +126,7 @@ class Iterator {
     std::size_t pos_ = 0;
 
 public:
-    Iterator(AgentExecutor<deep_agent_tag, LLMType>& agent, std::vector<std::string> inputs,
+    Iterator(agents::DeepAgent<LLMType>& agent, std::vector<std::string> inputs,
              Config config = {}, Hooks hooks = {}, Log log = {})
         : agent_(&agent), inputs_(std::move(inputs))
         , config_(std::move(config)), hooks_(std::move(hooks))
@@ -189,7 +189,7 @@ public:
 };
 
 template<is_chat LLMType>
-Iterator<LLMType> iterate(AgentExecutor<deep_agent_tag, LLMType>& agent,
+Iterator<LLMType> iterate(agents::DeepAgent<LLMType>& agent,
                           std::vector<std::string> inputs,
                           Config config = {}, Hooks hooks = {},
                           Log log = {}) {

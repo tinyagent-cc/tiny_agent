@@ -35,7 +35,7 @@ struct Skill {
         if (!description.empty())
             section += "<!-- " + description + " -->\n";
         section += instructions;
-        if (!section.empty() && section.back() != '\n')
+        if (section.back() != '\n')
             section += '\n';
         section += "</skill>";
         return section;

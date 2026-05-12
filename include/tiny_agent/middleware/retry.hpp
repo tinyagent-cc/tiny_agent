@@ -25,7 +25,7 @@ struct Retry {
             catch (const APIError& e) {
                 if (attempt >= MaxRetries || !detail::is_retryable(e.status_code))
                     throw;
-                auto delay = BackoffMs * (1 << attempt);
+                auto delay = BackoffMs * (static_cast<long long>(1) << attempt);
                 log.warn("retry", "attempt " + std::to_string(attempt + 1)
                     + "/" + std::to_string(MaxRetries) + " failed (status="
                     + std::to_string(e.status_code) + "), retrying in "
@@ -45,7 +45,7 @@ inline MiddlewareFn retry(int max_retries = 3,
             catch (const APIError& e) {
                 if (attempt >= max_retries || !detail::is_retryable(e.status_code))
                     throw;
-                auto delay = backoff * (1 << attempt);
+                auto delay = backoff * (static_cast<long long>(1) << attempt);
                 log.warn("retry", "attempt " + std::to_string(attempt + 1)
                     + "/" + std::to_string(max_retries) + " failed (status="
                     + std::to_string(e.status_code) + "), retrying in "

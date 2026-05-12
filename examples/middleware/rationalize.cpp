@@ -5,6 +5,11 @@
 #include <cstdio>
 #include <array>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 int main() {
     using namespace tiny_agent;
 
@@ -27,9 +32,9 @@ int main() {
         return next(msgs);
     };
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "devops",
             .system_prompt = "You are a devops assistant. Use tools to inspect the system. "
                              "Report findings concisely.",
@@ -86,9 +91,9 @@ int main() {
                 }),
                 guidance_spy,
             },
-        },
-        Log{std::cerr, LogLevel::info}
-    };
+            .logger = Log{std::cerr, LogLevel::info}
+        }
+    );
 
     auto result = agent.run(
         "Fetch logs for the 'api-gateway' service. Then check disk usage. "

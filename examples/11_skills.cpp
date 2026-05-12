@@ -22,13 +22,13 @@ int main() {
     // Build a system prompt that includes selected skills.
     auto skill_prompt = registry.build_prompt({"code-review", "summarize"});
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "skilled_agent",
             .system_prompt = "You are an expert assistant.\n\n" + skill_prompt,
         }
-    };
+    );
 
     std::cout << "\n--- Agent with code-review + summarize skills ---\n";
     std::cout << agent.run(

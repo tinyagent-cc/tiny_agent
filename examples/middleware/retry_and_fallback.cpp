@@ -20,17 +20,17 @@ int main() {
     {
         std::cout << "--- Retry Middleware (configured, triggers on 5xx errors) ---\n";
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "retry_demo",
                 .system_prompt = "Reply in one sentence.",
                 .middlewares = {
                     middleware::retry(3, std::chrono::milliseconds(500), log),
                 },
-            },
-            log
-        };
+                .logger = log
+            }
+        );
 
         std::cout << "  " << agent.run("What is 2+2?") << "\n\n";
     }
@@ -42,9 +42,9 @@ int main() {
     {
         std::cout << "--- Model Retry (enhanced, with backoff config) ---\n";
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "model_retry_demo",
                 .system_prompt = "Reply in one sentence.",
                 .middlewares = {
@@ -57,9 +57,9 @@ int main() {
                         .on_failure     = "continue",
                     }),
                 },
-            },
-            log
-        };
+                .logger = log
+            }
+        );
 
         std::cout << "  " << agent.run("What is the speed of light?") << "\n\n";
     }
@@ -75,17 +75,17 @@ int main() {
         fallbacks.push_back(
             init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key}));
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"nonexistent-model-xyz", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="nonexistent-model-xyz", .api_key=key},
+            {
                 .name = "fallback_demo",
                 .system_prompt = "Reply in one sentence.",
                 .middlewares = {
                     middleware::model_fallback(std::move(fallbacks), {}, log),
                 },
-            },
-            log
-        };
+                .logger = log
+            }
+        );
 
         std::cout << "  Primary model 'nonexistent-model-xyz' will fail...\n";
         auto result = agent.run("What is the capital of France?");
@@ -104,18 +104,18 @@ int main() {
         fallbacks.push_back(
             init_chat_model("openai:gpt-4o-mini", LLMConfig{.api_key = key}));
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"nonexistent-model-xyz", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="nonexistent-model-xyz", .api_key=key},
+            {
                 .name = "combined",
                 .system_prompt = "Reply in one sentence.",
                 .middlewares = {
                     middleware::model_retry({.max_retries = 1, .on_failure = "continue"}),
                     middleware::model_fallback(std::move(fallbacks), {}, log),
                 },
-            },
-            log
-        };
+                .logger = log
+            }
+        );
 
         auto result = agent.run("What year did humans land on the moon?");
         std::cout << "  " << result << "\n";

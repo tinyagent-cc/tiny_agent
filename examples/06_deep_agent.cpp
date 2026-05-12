@@ -12,7 +12,7 @@ int main() {
     LLMConfig cfg{.api_key = key};
 
     auto fact_checker = make_shared_agent(
-        OpenAIChat{"gpt-4o-mini", cfg},
+        OpenAIChat{.model = "gpt-4o-mini", .api_key = key},
         AgentConfig{
             .name = "fact_checker",
             .system_prompt = "You verify claims. Reply with VERIFIED or UNVERIFIED followed by a one-line explanation.",
@@ -20,7 +20,7 @@ int main() {
     );
 
     auto analyst = make_shared_agent(
-        OpenAIChat{"gpt-4o-mini", cfg},
+        OpenAIChat{.model = "gpt-4o-mini", .api_key = key},
         AgentConfig{
             .name = "analyst",
             .system_prompt = "You analyze topics and produce bullet-point summaries. "
@@ -30,14 +30,14 @@ int main() {
     );
 
     auto director = make_shared_agent(
-        OpenAIChat{"gpt-4o", cfg},
-        AgentConfig{
+        OpenAIChat{.model = "gpt-4o", .api_key = key},
+        {
             .name = "director",
             .system_prompt = "You are the director. Use the analyst to produce a verified analysis. "
                              "Present the final result clearly.",
             .tools = { agent_as_tool(analyst, "analyst", "Analyze a topic with fact-checking") },
-        },
-        Log{std::cerr, LogLevel::debug}
+            .logger = Log{std::cerr, LogLevel::debug}
+        }
     );
 
     auto result = director->run("Analyze the impact of renewable energy on global CO2 emissions.");

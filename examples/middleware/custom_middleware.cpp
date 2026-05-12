@@ -94,9 +94,9 @@ int main() {
 
     // ── Compose all custom middleware ────────────────────────────────────
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "custom_demo",
             .system_prompt = "You are a helpful assistant. Reply concisely.",
             .middlewares = {
@@ -106,8 +106,8 @@ int main() {
                 counter,           // counts calls
                 add_metadata,      // transforms messages
             },
-        },
-    };
+        }
+    );
 
     // Normal query — all middleware fires
     std::cout << "--- Normal query ---\n";

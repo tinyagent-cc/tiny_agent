@@ -32,8 +32,7 @@ class FlatVectorStore {
 public:
     void add(std::string content, std::vector<float> embedding,
              json metadata = json::object()) {
-        std::string id = "doc_" + std::to_string(next_id_++);
-        docs_.push_back({std::move(id), std::move(content),
+        docs_.push_back({"doc_" + std::to_string(next_id_++), std::move(content),
                          std::move(embedding), std::move(metadata)});
     }
 

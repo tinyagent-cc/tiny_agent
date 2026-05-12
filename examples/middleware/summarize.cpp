@@ -2,8 +2,6 @@
 #include <tiny_agent/providers/openai.hpp>
 #include <iostream>
 #include <cstdlib>
-#include <memory>
-
 int main() {
     using namespace tiny_agent;
 
@@ -20,9 +18,9 @@ int main() {
     {
         std::cout << "--- Part 1: Extractive Summarization (no extra LLM calls) ---\n";
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "extractive",
                 .system_prompt = "You are a knowledgeable assistant. Give detailed answers.",
                 .middlewares = {
@@ -32,7 +30,7 @@ int main() {
                     }),
                 },
             }
-        };
+        );
 
         const char* topics[] = {
             "Explain how photosynthesis works in detail.",
@@ -64,40 +62,27 @@ int main() {
     {
         std::cout << "--- Part 2: LLM-backed Summarization ---\n";
 
-        auto sum_llm = std::make_shared<OpenAIChat>(
-            std::string("gpt-4o-mini"), LLMConfig{.api_key = key});
+        auto sum_llm = OpenAIChat{.model="gpt-4o-mini", .api_key=key};
 
-        middleware::SummarizerFn llm_summarizer =
-            [sum_llm](const std::vector<Message>& msgs) -> std::string {
-                std::string combined;
-                for (auto& m : msgs) {
-                    auto t = m.text();
-                    if (t.empty()) continue;
-                    combined += std::string(to_string(m.role)) + ": "
-                             + t.substr(0, 300) + "\n";
-                }
-                auto resp = sum_llm->chat({
-                    Message::system("Condense this conversation into 2-3 key points. "
-                                    "Be very brief — under 100 words."),
-                    Message::user(combined)
-                });
-                return resp.message.text();
-            };
+        auto llm_fn = [&sum_llm](const std::string& prompt) -> std::string {
+            auto resp = sum_llm.chat({Message::user(prompt)});
+            return resp.message.text();
+        };
 
-        auto agent = AgentExecutor{
-            OpenAIChat{"gpt-4o-mini", key},
-            AgentConfig{
+        auto agent = make_agent(
+            OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+            {
                 .name = "llm_summarize",
                 .system_prompt = "You are a science tutor. Give thorough explanations.",
                 .middlewares = {
                     middleware::summarize(middleware::SummarizeConfig{
                         .trigger_tokens = 200,
                         .keep_recent    = 2,
-                        .summarizer     = llm_summarizer,
+                        .llm_fn         = llm_fn,
                     }),
                 },
             }
-        };
+        );
 
         const char* topics[] = {
             "What causes earthquakes?",

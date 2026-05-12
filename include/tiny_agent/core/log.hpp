@@ -64,7 +64,11 @@ private:
 #endif
         char buf[20];
         std::strftime(buf, sizeof(buf), "%H:%M:%S", &tm);
+        auto old_fmt = os.flags();
+        auto old_fill = os.fill();
         os << buf << "." << std::setfill('0') << std::setw(3) << ms << " ";
+        os.flags(old_fmt);
+        os.fill(old_fill);
     }
 };
 

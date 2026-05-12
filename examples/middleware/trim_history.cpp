@@ -9,9 +9,9 @@ int main() {
     const char* key = std::getenv("OPENAI_API_KEY");
     if (!key) { std::cerr << "OPENAI_API_KEY not set\n"; return 1; }
 
-    auto agent = AgentExecutor{
-        OpenAIChat{"gpt-4o-mini", key},
-        AgentConfig{
+    auto agent = make_agent(
+        OpenAIChat{.model="gpt-4o-mini", .api_key=key},
+        {
             .name = "geography",
             .system_prompt = "You are a geography expert. Reply in exactly one sentence.",
             .middlewares = {
@@ -20,7 +20,7 @@ int main() {
                 middleware::trim_history(4),
             },
         }
-    };
+    );
 
     std::cout << "=== Trim History Middleware Demo ===\n"
               << "(max_messages=4: system prompt + 4 most recent messages kept)\n\n";

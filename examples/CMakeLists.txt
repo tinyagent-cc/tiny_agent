@@ -12,6 +12,9 @@ set(EXAMPLES
     11_skills
     12_mcp_http
     13_embeddings_retriever
+    14_bind_and_kwargs
+    15_llm_summarize
+    16_deep_agent_custom
 )
 
 foreach(ex ${EXAMPLES})

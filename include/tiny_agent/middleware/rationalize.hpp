@@ -10,13 +10,13 @@ namespace detail {
 struct MsgGuard {
     std::vector<Message>& msgs;
     enum class Action { restore_front, erase_front, none } action = Action::none;
-    std::string original_content;
+    std::variant<std::string, std::vector<ContentPart>> original_content;
 
     MsgGuard(std::vector<Message>& m) : msgs(m) {}
     MsgGuard(const MsgGuard&) = delete;
     MsgGuard& operator=(const MsgGuard&) = delete;
 
-    void will_restore_front(std::string original) {
+    void will_restore_front(std::variant<std::string, std::vector<ContentPart>> original) {
         action = Action::restore_front;
         original_content = std::move(original);
     }
@@ -113,9 +113,13 @@ struct Rationalize {
 
         detail::MsgGuard guard(msgs);
         if (!msgs.empty() && msgs.front().role == Role::system) {
-            auto original = msgs.front().text();
-            msgs.front().content = original + guidance;
-            guard.will_restore_front(std::move(original));
+            if (auto* s = std::get_if<std::string>(&msgs.front().content)) {
+                auto original = std::move(*s);
+                msgs.front().content = original + guidance;
+                guard.will_restore_front(std::move(original));
+            } else {
+                return next(msgs);
+            }
         } else {
             msgs.insert(msgs.begin(), Message::system(guidance));
             guard.will_erase_front();
@@ -137,9 +141,13 @@ inline MiddlewareFn rationalize(RationalizeConfig cfg = {}) {
 
         detail::MsgGuard guard(msgs);
         if (!msgs.empty() && msgs.front().role == Role::system) {
-            auto original = msgs.front().text();
-            msgs.front().content = original + guidance;
-            guard.will_restore_front(std::move(original));
+            if (auto* s = std::get_if<std::string>(&msgs.front().content)) {
+                auto original = std::move(*s);
+                msgs.front().content = original + guidance;
+                guard.will_restore_front(std::move(original));
+            } else {
+                return next(msgs);
+            }
         } else {
             msgs.insert(msgs.begin(), Message::system(guidance));
             guard.will_erase_front();

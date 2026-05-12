@@ -40,11 +40,11 @@ inline AnyChat init_chat_model(const std::string& model_string,
     auto [provider, model] = parse_model_string(model_string);
 
     if (provider == "openai")
-        return AnyChat{LLMModel<OpenAI, chat_tag>{model, std::move(config)}};
+        return AnyChat{LLMModel<OpenAI, chat_tag>::from_config(model, std::move(config))};
     if (provider == "anthropic")
-        return AnyChat{LLMModel<Anthropic, chat_tag>{model, std::move(config)}};
+        return AnyChat{LLMModel<Anthropic, chat_tag>::from_config(model, std::move(config))};
     if (provider == "gemini")
-        return AnyChat{LLMModel<Gemini, chat_tag>{model, std::move(config)}};
+        return AnyChat{LLMModel<Gemini, chat_tag>::from_config(model, std::move(config))};
 
     throw Error("init_chat_model: unknown provider '" + provider +
                 "' (supported: openai, anthropic, gemini)");

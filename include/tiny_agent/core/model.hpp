@@ -1,18 +1,4 @@
 #pragma once
-// ═══════════════════════════════════════════════════════════════════════════════
-//  model.hpp  —  Model kind concepts + primary LLMModel template + type erasure
-//
-//  Two orthogonal model concepts:
-//    is_chat      — a model that takes messages and returns an LLM response
-//    is_embedding — a model that takes text and returns a float vector
-//
-//  LLMModel<Provider, Kind> is the primary (undefined) template, fully
-//  specialized per provider x kind combination in providers/*.hpp.
-//
-//  ChatVariant<Ps...> / EmbeddingVariant<Ps...> provide variant-based wrappers
-//  using std::visit + fold expressions — no virtual dispatch.
-// ═══════════════════════════════════════════════════════════════════════════════
-
 #include "types.hpp"
 #include "log.hpp"
 #include "tool.hpp"
@@ -21,23 +7,14 @@
 #include <concepts>
 #include <functional>
 #include <string>
+#include <map>
+#include <limits>
 #include <variant>
-#include <vector>
 
 namespace tiny_agent {
 
-// ─── Kind tags ────────────────────────────────────────────────────────────────
-
 struct chat_tag      { static constexpr const char* name = "chat";      };
 struct embedding_tag { static constexpr const char* name = "embedding"; };
-
-// ─── is_chat concept ──────────────────────────────────────────────────────────
-//
-// A type T satisfies is_chat iff:
-//   1. It declares model_tag as chat_tag
-//   2. It has invoke(string) -> string          (simple Runnable surface)
-//   3. It has chat(msgs, tools) -> LLMResponse  (rich agent surface)
-//   4. It exposes model_name() and temperature()
 
 template<typename T>
 concept is_chat =
@@ -49,10 +26,8 @@ concept is_chat =
         { m.invoke(prompt)     } -> std::convertible_to<std::string>;
         { m.chat(msgs, tools)  } -> std::same_as<LLMResponse>;
         { m.model_name()       } -> std::convertible_to<std::string>;
-        { m.temperature()      } -> std::convertible_to<float>;
+        { m.get_temperature()  } -> std::convertible_to<float>;
     };
-
-// ─── is_embedding concept ─────────────────────────────────────────────────────
 
 template<typename T>
 concept is_embedding =
@@ -66,8 +41,6 @@ concept is_embedding =
         { m.dimensions()           } -> std::convertible_to<std::size_t>;
     };
 
-// ─── ModelConfig (simple shared config) ───────────────────────────────────────
-
 struct ModelConfig {
     std::string  model_name   {};
     std::string  api_key      {};
@@ -77,15 +50,13 @@ struct ModelConfig {
     std::size_t  dimensions   { 0 };
 };
 
-// ─── LLMConfig (full chat config, extends with provider-specific fields) ──────
-
 struct LLMConfig {
     std::string api_key;
     std::string base_url;
     std::string api_version;
 
-    double temperature  = 0.7;
-    int    max_tokens   = 4096;
+    std::optional<double> temperature;
+    std::optional<int>    max_tokens;
     std::optional<double> top_p;
     std::optional<double> top_k;
     std::optional<double> frequency_penalty;
@@ -93,15 +64,35 @@ struct LLMConfig {
     std::optional<int>    seed;
     std::vector<std::string> stop;
     std::optional<std::string> response_format;
+    std::optional<bool>   thinking;
 
     int timeout_seconds = 120;
     std::map<std::string, std::string> headers;
     json extra = json::object();
 
     Log log;
-};
 
-// ─── EmbeddingConfig ──────────────────────────────────────────────────────────
+    static LLMConfig merge(const LLMConfig& base, const LLMConfig& overrides) {
+        if (overrides.api_key.size()) return overrides;
+        LLMConfig c = base;
+        if (!overrides.base_url.empty())            c.base_url = overrides.base_url;
+        if (!overrides.api_version.empty())         c.api_version = overrides.api_version;
+        if (overrides.temperature)                  c.temperature = overrides.temperature;
+        if (overrides.max_tokens)                   c.max_tokens = overrides.max_tokens;
+        if (overrides.top_p)                        c.top_p = overrides.top_p;
+        if (overrides.top_k)                        c.top_k = overrides.top_k;
+        if (overrides.frequency_penalty)            c.frequency_penalty = overrides.frequency_penalty;
+        if (overrides.presence_penalty)             c.presence_penalty = overrides.presence_penalty;
+        if (overrides.seed)                         c.seed = overrides.seed;
+        if (!overrides.stop.empty())                c.stop = overrides.stop;
+        if (overrides.response_format)              c.response_format = overrides.response_format;
+        if (overrides.thinking)                     c.thinking = overrides.thinking;
+        if (overrides.timeout_seconds != 120)       c.timeout_seconds = overrides.timeout_seconds;
+        for (auto& [k, v] : overrides.headers)      c.headers[k] = v;
+        if (!overrides.extra.empty())               c.extra.merge_patch(overrides.extra);
+        return c;
+    }
+};
 
 struct EmbeddingConfig {
     std::string api_key;
@@ -116,25 +107,14 @@ struct EmbeddingConfig {
     Log log;
 };
 
-// ─── EmbeddingResponse ────────────────────────────────────────────────────────
-
 struct EmbeddingResponse {
     std::vector<std::vector<float>> embeddings;
     json  usage;
     json  raw;
 };
 
-// ─── Primary LLMModel template (undefined — forces specialization) ────────────
-
 template<typename Provider, typename Kind>
 class LLMModel;
-
-// ─── ChatVariant — variant-based wrapper for is_chat models ──────────────────
-//
-// Uses std::variant<LLMModel<Providers, chat_tag>...> with std::visit for
-// dispatch.  No virtual functions, no heap allocation.  The variant is
-// instantiated only when the provider specializations are visible (typically
-// in init_chat_model.hpp).  Satisfies is_chat.
 
 template<typename... Providers>
 class ChatVariant {
@@ -172,25 +152,21 @@ public:
         }, v_);
     }
 
-    float temperature() const {
-        return std::visit([](const auto& m) -> float {
-            return m.temperature();
-        }, v_);
+    float get_temperature() const {
+        return std::visit([](const auto& m) -> float { return m.get_temperature(); }, v_);
     }
 
-    std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& cfg = {}) {
+    std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& = {}) {
         std::vector<std::string> out;
         out.reserve(prompts.size());
-        for (auto& p : prompts) out.push_back(invoke(std::move(p), cfg));
+        for (auto& p : prompts) out.push_back(invoke(std::move(p)));
         return out;
     }
 
-    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(prompt), cfg));
+    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& = {}) {
+        cb(invoke(std::move(prompt)));
     }
 };
-
-// ─── EmbeddingVariant — variant-based wrapper for is_embedding models ────────
 
 template<typename... Providers>
 class EmbeddingVariant {
@@ -210,45 +186,36 @@ public:
     EmbeddingVariant& operator=(EmbeddingVariant&&) = default;
 
     std::vector<float> invoke(const std::string& text, const RunConfig& = {}) {
-        return std::visit([&](auto& m) -> std::vector<float> {
-            return m.invoke(text);
-        }, v_);
+        return std::visit([&](auto& m) -> std::vector<float> { return m.invoke(text); }, v_);
     }
 
     std::vector<float> embed_query(const std::string& text) {
-        return std::visit([&](auto& m) -> std::vector<float> {
-            return m.embed_query(text);
-        }, v_);
+        return std::visit([&](auto& m) -> std::vector<float> { return m.embed_query(text); }, v_);
     }
 
-    std::vector<std::vector<float>>
-    embed_documents(const std::vector<std::string>& texts) {
+    std::vector<std::vector<float>> embed_documents(const std::vector<std::string>& texts) {
         return std::visit([&](auto& m) -> std::vector<std::vector<float>> {
             return m.embed_documents(texts);
         }, v_);
     }
 
     std::string model_name() const {
-        return std::visit([](const auto& m) -> std::string {
-            return std::string(m.model_name());
-        }, v_);
+        return std::visit([](const auto& m) -> std::string { return std::string(m.model_name()); }, v_);
     }
 
     std::size_t dimensions() const {
-        return std::visit([](const auto& m) -> std::size_t {
-            return m.dimensions();
-        }, v_);
+        return std::visit([](const auto& m) -> std::size_t { return m.dimensions(); }, v_);
     }
 
-    std::vector<std::vector<float>> batch(std::vector<std::string> texts, const RunConfig& cfg = {}) {
+    std::vector<std::vector<float>> batch(std::vector<std::string> texts, const RunConfig& = {}) {
         std::vector<std::vector<float>> out;
         out.reserve(texts.size());
-        for (auto& t : texts) out.push_back(invoke(t, cfg));
+        for (auto& t : texts) out.push_back(invoke(t));
         return out;
     }
 
-    void stream(std::string text, std::function<void(std::vector<float>)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(text, cfg));
+    void stream(std::string text, std::function<void(std::vector<float>)> cb, const RunConfig& = {}) {
+        cb(invoke(text));
     }
 };
 

@@ -8,6 +8,8 @@
 
 #include "../core/model.hpp"
 #include "../core/tool.hpp"
+#include <limits>
+#include <memory>
 
 namespace tiny_agent {
 
@@ -29,28 +31,58 @@ struct GeminiChatConfig {
     std::size_t max_output_tokens   { 2048 };
 };
 
-template<> class LLMModel<Gemini, chat_tag>;
-template<> class LLMModel<Gemini, embedding_tag>;
+template<> struct LLMModel<Gemini, chat_tag>;
+template<> struct LLMModel<Gemini, embedding_tag>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  LLMModel<Gemini, chat_tag>
 // ═══════════════════════════════════════════════════════════════════════════════
 template<>
-class LLMModel<Gemini, chat_tag> {
-    std::string     model_;
-    LLMConfig       config_;
-    httplib::Client client_;
+struct LLMModel<Gemini, chat_tag> {
+    using input_t   = std::string;
+    using output_t  = std::string;
+    using model_tag = chat_tag;
 
-    void init_client() {
-        config_.log.debug("llm", "gemini client initializing (model=" + model_ + ")");
-        client_.set_read_timeout(config_.timeout_seconds);
-        httplib::Headers hdrs;
-        for (auto& [k, v] : config_.headers) hdrs.emplace(k, v);
-        if (!hdrs.empty()) client_.set_default_headers(hdrs);
+    // ── Aggregate-initializable fields ──────────────────────────────────────
+    std::string model;
+    std::string api_key;
+    std::string base_url;
+    std::string api_version;
+    std::optional<double> temperature;
+    std::optional<int>    max_tokens;
+    std::optional<double> top_p;
+    std::optional<double> top_k;
+    std::vector<std::string> stop;
+    std::optional<std::string> response_format;
+    std::optional<bool>   thinking;
+    int timeout_seconds = 120;
+    std::map<std::string, std::string> headers;
+    json extra = json::object();
+    Log log;
+
+    // implementation detail (public only for C++20 aggregate init)
+    mutable std::unique_ptr<httplib::Client> client_;
+    mutable bool client_init_ = false;
+
+private:
+
+    void ensure_client() const {
+        if (!client_init_) {
+            client_ = std::make_unique<httplib::Client>(
+                base_url.empty() ? "https://generativelanguage.googleapis.com" : base_url);
+            log.debug("llm", "gemini client initializing (model=" + model + ")");
+            client_->set_read_timeout(timeout_seconds);
+            httplib::Headers hdrs;
+            for (auto& [k, v] : headers) hdrs.emplace(k, v);
+            if (!hdrs.empty()) client_->set_default_headers(hdrs);
 #ifdef __APPLE__
-        client_.set_ca_cert_path("/etc/ssl/cert.pem");
+            client_->set_ca_cert_path("/etc/ssl/cert.pem");
 #endif
+            client_init_ = true;
+        }
     }
+
+    // ── Serialization helpers ───────────────────────────────────────────────
 
     static json to_gemini_type(const json& schema) {
         json out = schema;
@@ -85,10 +117,23 @@ class LLMModel<Gemini, chat_tag> {
             for (auto& p : *cp) {
                 if (p.type == "text")
                     parts.push_back({{"text", p.text}});
-                else if (p.type == "image_url" && p.image_url)
+                else if (p.type == "image_url" && p.image_url) {
+                    auto url = p.image_url->url;
+                    std::string mime = "image/jpeg";
+                    auto ext = url.find_last_of('.');
+                    if (ext != std::string::npos) {
+                        auto suffix = url.substr(ext + 1);
+                        if (suffix == "png") mime = "image/png";
+                        else if (suffix == "webp") mime = "image/webp";
+                        else if (suffix == "gif") mime = "image/gif";
+                        else if (suffix == "bmp") mime = "image/bmp";
+                        else if (suffix == "svg") mime = "image/svg+xml";
+                        else if (suffix == "heic" || suffix == "heif") mime = "image/heic";
+                    }
                     parts.push_back({{"fileData",
-                        {{"mimeType", "image/jpeg"},
-                         {"fileUri", p.image_url->url}}}});
+                        {{"mimeType", mime},
+                         {"fileUri", url}}}});
+                }
             }
         } else {
             auto txt = std::get<std::string>(m.content);
@@ -136,15 +181,16 @@ class LLMModel<Gemini, chat_tag> {
     }
 
     json build_request(const std::vector<Message>& messages,
-                       const std::vector<ToolSchema>& tools) const {
+                       const std::vector<ToolSchema>& tools,
+                       const LLMConfig& cfg) const {
         json body;
 
         json gen;
-        gen["temperature"]     = config_.temperature;
-        gen["maxOutputTokens"] = config_.max_tokens;
-        if (config_.top_p) gen["topP"] = *config_.top_p;
-        if (config_.top_k) gen["topK"] = static_cast<int>(*config_.top_k);
-        if (!config_.stop.empty()) gen["stopSequences"] = config_.stop;
+        if (cfg.temperature)         gen["temperature"]     = *cfg.temperature;
+        if (cfg.max_tokens)          gen["maxOutputTokens"] = *cfg.max_tokens;
+        if (cfg.top_p)               gen["topP"] = *cfg.top_p;
+        if (cfg.top_k)               gen["topK"] = static_cast<int>(*cfg.top_k);
+        if (!cfg.stop.empty())       gen["stopSequences"] = cfg.stop;
         body["generationConfig"] = gen;
 
         json contents = json::array();
@@ -168,51 +214,20 @@ class LLMModel<Gemini, chat_tag> {
             body["tools"] = json::array({{{"functionDeclarations", decls}}});
         }
 
-        if (!config_.extra.empty()) body.merge_patch(config_.extra);
+        if (!cfg.extra.empty()) body.merge_patch(cfg.extra);
         return body;
     }
 
     std::string request_path() const {
-        return "/v1beta/models/" + model_
-             + ":generateContent?key=" + config_.api_key;
+        return "/v1beta/models/" + model
+             + ":generateContent?key=" + api_key;
     }
 
 public:
-    using input_t   = std::string;
-    using output_t  = std::string;
-    using model_tag = chat_tag;
-    using Config    = GeminiChatConfig;
+    // ── Concept surface (is_chat) ───────────────────────────────────────────
 
-    LLMModel(std::string model, LLMConfig cfg = {})
-        : model_(std::move(model))
-        , config_(std::move(cfg))
-        , client_(config_.base_url.empty()
-              ? "https://generativelanguage.googleapis.com" : config_.base_url)
-    { init_client(); }
-
-    LLMModel(std::string model, std::string api_key)
-        : LLMModel(std::move(model), LLMConfig{.api_key = std::move(api_key)}) {}
-
-    explicit LLMModel(GeminiChatConfig cfg = GeminiChatConfig{})
-        : LLMModel(std::move(cfg.model),
-                    LLMConfig{.api_key = std::move(cfg.api_key),
-                              .temperature = cfg.temperature,
-                              .max_tokens = static_cast<int>(cfg.max_output_tokens)}) {}
-
-    explicit LLMModel(ModelConfig cfg)
-        : LLMModel(cfg.model_name.empty() ? "gemini-2.0-flash" : cfg.model_name,
-                    LLMConfig{.api_key = cfg.api_key,
-                              .base_url = cfg.base_url,
-                              .temperature = cfg.temperature,
-                              .max_tokens = static_cast<int>(cfg.max_tokens)}) {}
-
-    LLMModel(const LLMModel&)            = delete;
-    LLMModel& operator=(const LLMModel&) = delete;
-    LLMModel(LLMModel&&)                 = default;
-    LLMModel& operator=(LLMModel&&)      = default;
-
-    [[nodiscard]] std::string model_name()  const { return model_; }
-    [[nodiscard]] float       temperature() const { return static_cast<float>(config_.temperature); }
+    [[nodiscard]] std::string model_name()  const { return model; }
+    [[nodiscard]] float       get_temperature() const { return static_cast<float>(temperature.value_or(0.7)); }
 
     std::string invoke(std::string prompt, const RunConfig& = {}) {
         std::vector<Message> msgs = {Message::user(std::move(prompt))};
@@ -221,25 +236,44 @@ public:
     }
 
     LLMResponse chat(const std::vector<Message>& msgs,
-                     const std::vector<ToolSchema>& tools = {}) {
-        auto& log = config_.log;
-        log.debug("llm", "gemini chat (model=" + model_
+                     const std::vector<ToolSchema>& tools = {},
+                     const LLMConfig& overrides = {}) {
+        auto& lg = log;
+        LLMConfig self;
+        self.api_key = api_key;
+        self.base_url = base_url;
+        self.api_version = api_version;
+        self.temperature = temperature;
+        self.max_tokens = max_tokens;
+        self.top_p = top_p;
+        self.top_k = top_k;
+        self.stop = stop;
+        self.response_format = response_format;
+        self.thinking = thinking;
+        self.timeout_seconds = timeout_seconds;
+        self.headers = headers;
+        self.extra = extra;
+        self.log = log;
+
+        auto cfg = overrides.api_key.empty() ? self : LLMConfig::merge(self, overrides);
+        lg.debug("llm", "gemini chat (model=" + model
             + " messages=" + std::to_string(msgs.size())
             + " tools=" + std::to_string(tools.size()) + ")");
 
-        auto body = build_request(msgs, tools);
+        auto body = build_request(msgs, tools, cfg);
         auto path = request_path();
-        log.trace("llm", "POST " + path);
+        lg.trace("llm", "POST " + path);
 
-        auto res = client_.Post(path, body.dump(), "application/json");
+        ensure_client();
+        auto res = client_->Post(path, body.dump(), "application/json");
         if (!res) {
             auto err = "HTTP request failed: " + httplib::to_string(res.error());
-            log.error("llm", err);
+            lg.error("llm", err);
             throw APIError(0, err);
         }
 
         if (res->status != 200) {
-            log.error("llm", "gemini API error (status="
+            lg.error("llm", "gemini API error (status="
                 + std::to_string(res->status) + "): " + res->body);
             throw APIError(res->status, "gemini API error: " + res->body);
         }
@@ -263,10 +297,12 @@ public:
             parsed
         };
 
-        log.debug("llm", "finish_reason=" + response.finish_reason
+        lg.debug("llm", "finish_reason=" + response.finish_reason
             + " tool_calls=" + std::to_string(response.message.tool_calls.size()));
         return response;
     }
+
+    // ── Runnable surface ────────────────────────────────────────────────────
 
     std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& cfg = {}) {
         std::vector<std::string> out;
@@ -280,66 +316,125 @@ public:
     }
 
     LLMModel& with_system(std::string sys) {
-        config_.extra["systemInstruction"] = {
+        extra["systemInstruction"] = {
             {"parts", json::array({{{"text", std::move(sys)}}})}};
         return *this;
     }
 
-    const LLMConfig& config() const { return config_; }
+    static LLMModel from_config(std::string model, LLMConfig cfg) {
+        LLMModel m;
+        m.model = std::move(model);
+        m.api_key = std::move(cfg.api_key);
+        m.base_url = std::move(cfg.base_url);
+        m.api_version = std::move(cfg.api_version);
+        m.temperature = cfg.temperature;
+        m.max_tokens = cfg.max_tokens;
+        m.top_p = cfg.top_p;
+        m.top_k = cfg.top_k;
+        m.stop = std::move(cfg.stop);
+        m.response_format = std::move(cfg.response_format);
+        m.thinking = cfg.thinking;
+        m.timeout_seconds = cfg.timeout_seconds;
+        m.headers = std::move(cfg.headers);
+        m.extra = std::move(cfg.extra);
+        m.log = std::move(cfg.log);
+        return m;
+    }
+
+    LLMConfig config() const {
+        LLMConfig c;
+        c.api_key = api_key;
+        c.base_url = base_url;
+        c.api_version = api_version;
+        c.temperature = temperature;
+        c.max_tokens = max_tokens;
+        c.top_p = top_p;
+        c.top_k = top_k;
+        c.stop = stop;
+        c.response_format = response_format;
+        c.thinking = thinking;
+        c.timeout_seconds = timeout_seconds;
+        c.headers = headers;
+        c.extra = extra;
+        c.log = log;
+        return c;
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  LLMModel<Gemini, embedding_tag>
 // ═══════════════════════════════════════════════════════════════════════════════
 template<>
-class LLMModel<Gemini, embedding_tag> {
-    std::string       model_;
-    EmbeddingConfig   config_;
-    httplib::Client   client_;
+struct LLMModel<Gemini, embedding_tag> {
+    using input_t   = std::string;
+    using output_t  = std::vector<float>;
+    using model_tag = embedding_tag;
 
-    void init_client() {
-        config_.log.debug("embeddings", "gemini client initializing (model=" + model_ + ")");
-        client_.set_read_timeout(config_.timeout_seconds);
-        httplib::Headers hdrs;
-        for (auto& [k, v] : config_.headers) hdrs.emplace(k, v);
-        if (!hdrs.empty()) client_.set_default_headers(hdrs);
+    // ── Aggregate-initializable fields ──────────────────────────────────────
+    std::string model;
+    std::string api_key;
+    std::string base_url;
+    std::optional<int> dimensions_;
+    int timeout_seconds = 120;
+    std::map<std::string, std::string> headers;
+    json extra = json::object();
+    Log log;
+
+    // implementation detail (public only for C++20 aggregate init)
+    mutable std::unique_ptr<httplib::Client> client_;
+    mutable bool client_init_ = false;
+
+private:
+
+    void ensure_client() const {
+        if (!client_init_) {
+            client_ = std::make_unique<httplib::Client>(
+                base_url.empty() ? "https://generativelanguage.googleapis.com" : base_url);
+            log.debug("embeddings", "gemini client initializing (model=" + model + ")");
+            client_->set_read_timeout(timeout_seconds);
+            httplib::Headers hdrs;
+            for (auto& [k, v] : headers) hdrs.emplace(k, v);
+            if (!hdrs.empty()) client_->set_default_headers(hdrs);
 #ifdef __APPLE__
-        client_.set_ca_cert_path("/etc/ssl/cert.pem");
+            client_->set_ca_cert_path("/etc/ssl/cert.pem");
 #endif
+            client_init_ = true;
+        }
     }
 
     EmbeddingResponse embed_raw(const std::vector<std::string>& texts) {
-        auto& log = config_.log;
-        log.debug("embeddings", "gemini embed (model=" + model_
+        auto& lg = log;
+        lg.debug("embeddings", "gemini embed (model=" + model
             + " texts=" + std::to_string(texts.size()) + ")");
 
-        std::string model_path = "models/" + model_;
+        std::string model_path = "models/" + model;
         json requests = json::array();
         for (auto& text : texts) {
             json req;
             req["model"]   = model_path;
             req["content"] = {{"parts", json::array({{{"text", text}}})}};
-            if (config_.dimensions)
-                req["outputDimensionality"] = *config_.dimensions;
+            if (dimensions_)
+                req["outputDimensionality"] = *dimensions_;
             requests.push_back(std::move(req));
         }
         json body;
         body["requests"] = requests;
-        if (!config_.extra.empty()) body.merge_patch(config_.extra);
+        if (!extra.empty()) body.merge_patch(extra);
 
-        std::string path = "/v1beta/models/" + model_
-             + ":batchEmbedContents?key=" + config_.api_key;
-        log.trace("embeddings", "POST " + path);
+        std::string path = "/v1beta/models/" + model
+             + ":batchEmbedContents?key=" + api_key;
+        lg.trace("embeddings", "POST " + path);
 
-        auto res = client_.Post(path, body.dump(), "application/json");
+        ensure_client();
+        auto res = client_->Post(path, body.dump(), "application/json");
         if (!res) {
             auto err = "HTTP request failed: " + httplib::to_string(res.error());
-            log.error("embeddings", err);
+            lg.error("embeddings", err);
             throw APIError(0, err);
         }
 
         if (res->status != 200) {
-            log.error("embeddings", "gemini API error (status="
+            lg.error("embeddings", "gemini API error (status="
                 + std::to_string(res->status) + "): " + res->body);
             throw APIError(res->status, "gemini API error: " + res->body);
         }
@@ -356,40 +451,17 @@ class LLMModel<Gemini, embedding_tag> {
         for (auto& item : parsed["embeddings"])
             embeddings.push_back(item["values"].get<std::vector<float>>());
 
-        log.debug("embeddings",
+        lg.debug("embeddings",
             "returned " + std::to_string(embeddings.size()) + " embedding(s)");
         return {std::move(embeddings), json::object(), parsed};
     }
 
 public:
-    using input_t   = std::string;
-    using output_t  = std::vector<float>;
-    using model_tag = embedding_tag;
+    // ── Concept surface (is_embedding) ──────────────────────────────────────
 
-    LLMModel(std::string model, EmbeddingConfig cfg = {})
-        : model_(std::move(model))
-        , config_(std::move(cfg))
-        , client_(config_.base_url.empty()
-              ? "https://generativelanguage.googleapis.com" : config_.base_url)
-    { init_client(); }
-
-    LLMModel(std::string model, std::string api_key)
-        : LLMModel(std::move(model), EmbeddingConfig{.api_key = std::move(api_key)}) {}
-
-    explicit LLMModel(ModelConfig cfg = {.model_name = "text-embedding-004", .dimensions = 768})
-        : LLMModel(cfg.model_name.empty() ? "text-embedding-004" : cfg.model_name,
-                    EmbeddingConfig{.api_key = cfg.api_key,
-                                   .base_url = cfg.base_url,
-                                   .dimensions = cfg.dimensions ? std::optional<int>(static_cast<int>(cfg.dimensions)) : std::nullopt}) {}
-
-    LLMModel(const LLMModel&)            = delete;
-    LLMModel& operator=(const LLMModel&) = delete;
-    LLMModel(LLMModel&&)                 = default;
-    LLMModel& operator=(LLMModel&&)      = default;
-
-    [[nodiscard]] std::string model_name() const { return model_; }
+    [[nodiscard]] std::string model_name() const { return model; }
     [[nodiscard]] std::size_t dimensions() const {
-        return config_.dimensions ? static_cast<std::size_t>(*config_.dimensions) : 0;
+        return dimensions_ ? static_cast<std::size_t>(*dimensions_) : 0;
     }
 
     std::vector<float> invoke(const std::string& text, const RunConfig& = {}) {
@@ -408,6 +480,8 @@ public:
         return std::move(embed_raw(texts).embeddings);
     }
 
+    // ── Runnable surface ────────────────────────────────────────────────────
+
     std::vector<std::vector<float>> batch(std::vector<std::string> texts, const RunConfig& cfg = {}) {
         std::vector<std::vector<float>> out;
         out.reserve(texts.size());
@@ -419,9 +493,33 @@ public:
         cb(invoke(text, cfg));
     }
 
-    const EmbeddingConfig& config() const { return config_; }
+    static LLMModel from_config(std::string model, EmbeddingConfig cfg = {}) {
+        LLMModel m;
+        m.model = std::move(model);
+        m.api_key = std::move(cfg.api_key);
+        m.base_url = std::move(cfg.base_url);
+        m.dimensions_ = cfg.dimensions;
+        m.timeout_seconds = cfg.timeout_seconds;
+        m.headers = std::move(cfg.headers);
+        m.extra = std::move(cfg.extra);
+        m.log = std::move(cfg.log);
+        return m;
+    }
+
+    EmbeddingConfig config() const {
+        EmbeddingConfig c;
+        c.api_key = api_key;
+        c.base_url = base_url;
+        c.dimensions = dimensions_;
+        c.timeout_seconds = timeout_seconds;
+        c.headers = headers;
+        c.extra = extra;
+        c.log = log;
+        return c;
+    }
 };
 
+// ─── Convenience aliases ──────────────────────────────────────────────────────
 using GeminiChat      = LLMModel<Gemini, chat_tag>;
 using GeminiEmbedding = LLMModel<Gemini, embedding_tag>;
 
