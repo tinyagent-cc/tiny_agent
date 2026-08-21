@@ -23,6 +23,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #include "otlp.hpp"
+#include <cstdio>
 #include <ctime>
 
 namespace tiny_agent::obs {
