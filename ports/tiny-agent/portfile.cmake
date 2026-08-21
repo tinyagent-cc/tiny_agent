@@ -2,7 +2,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO rhajamor/tiny_agent
     REF v0.3.0
-    SHA512 0  # replaced with the real hash when the v0.3.0 tag exists
+    SHA512 7a5d67be556267b1c96220b88481db634fb35c560794d6458e3a206d73773ae93dab8d2f905d6db7d0bcd79661303f57f3cee33203b60f528c19c5462175749d
     HEAD_REF main
 )
 
