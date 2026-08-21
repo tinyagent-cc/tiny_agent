@@ -1,0 +1,32 @@
+# tiny_agent
+
+> A header-only C++20 AI agent framework: seven LLM providers (OpenAI, Anthropic, Gemini, Mistral, Cohere, VoyageAI, plus any OpenAI-compatible local server), MCP built in over stdio and HTTP, MIT licensed, and small enough to run on a Raspberry Pi or Jetson. Built for C++ engineers who want tool-using agents and sub-agent delegation without a runtime or a virtual-dispatch layer.
+
+## Docs
+- [README](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/README.md): overview, quick start, providers, middleware, DeepAgent delegation, comparison table, FAQ
+- [Observability](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/observability.md): tracing, exporters, Arize Phoenix, Langfuse
+- [Vector stores](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/vector-stores.md): the store concept, Qdrant, Chroma, Weaviate, Redis, Milvus
+- [Integration status](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/integrations.md): which backends are live-verified against a real server versus offline-tested only
+- [Context management](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/context-management.md): token budgets and compaction
+- [Direction](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/direction-2026-08.md): roadmap and rationale
+
+## Examples
+- [06_deep_agent.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/06_deep_agent.cpp): an agent calling another agent as a tool
+- [16_deep_agent_custom.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/16_deep_agent_custom.cpp): custom sub-agent wiring
+- [04_mcp_client.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/04_mcp_client.cpp): MCP over stdio
+- [12_mcp_http.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/12_mcp_http.cpp): MCP over HTTP
+- [17_streaming.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/17_streaming.cpp): SSE streaming against Ollama or llama.cpp
+- [18_tracing.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/18_tracing.cpp): tracing to Phoenix, Langfuse or stderr
+- [19_vector_store.cpp](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/examples/19_vector_store.cpp): embeddings and retrieval across vector store backends
+
+## Benchmarks
+- [Measured footprint and performance](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/benchmarks.md): binary size, RSS, and tokens/sec on Raspberry Pi 5, Jetson Orin Nano and macOS arm64
+- [Pi 5 proof](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/proofs/pi5-bench.md): raw build, test and bench commands and output
+- [Jetson proof](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/docs/proofs/jetson-bench.md): raw build, test and bench commands and output
+
+## Integrations
+- [OpenAI provider](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/include/tiny_agent/providers/openai.hpp)
+- [Anthropic provider](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/include/tiny_agent/providers/anthropic.hpp)
+- [Local provider](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/include/tiny_agent/providers/local.hpp): Ollama, llama.cpp, vLLM, any OpenAI-compatible endpoint
+- [MCP client](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/include/tiny_agent/mcp/client.hpp): stdio and HTTP transports, no paid tier
+- [Agent Skills](https://raw.githubusercontent.com/rhajamor/tiny_agent/main/include/tiny_agent/skills/skill.hpp): SKILL.md loading
