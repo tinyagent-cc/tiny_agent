@@ -2,7 +2,6 @@ set(EXAMPLES
     01_basic_chat
     02_tool_calling
     03_nested_agents
-    04_mcp_client
     05_middleware
     06_deep_agent
     07_multimodal
@@ -14,6 +13,11 @@ set(EXAMPLES
     13_embeddings_retriever
     14_streaming
 )
+
+# The MCP stdio transport is POSIX-only (transport.hpp guards it out on _WIN32).
+if(NOT WIN32)
+    list(APPEND EXAMPLES 04_mcp_client)
+endif()
 
 foreach(ex ${EXAMPLES})
     add_executable(${ex} ${ex}.cpp)
