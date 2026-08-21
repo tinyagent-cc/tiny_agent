@@ -1,0 +1,6 @@
+tiny-agent is header-only. Include what you use:
+
+    #include <tiny_agent/tiny_agent.hpp>
+    #include <tiny_agent/providers/openai.hpp>
+
+and link the dependencies vcpkg installed (nlohmann-json, cpp-httplib with openssl).

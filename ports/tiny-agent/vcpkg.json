@@ -1,0 +1,14 @@
+{
+  "name": "tiny-agent",
+  "version": "0.3.0",
+  "description": "Header-only C++20 agent framework: multi-provider LLM support, MCP, tool calling, streaming, sub-agents. Small enough to run your agent on a Raspberry Pi.",
+  "homepage": "https://github.com/rhajamor/tiny_agent",
+  "license": "MIT",
+  "dependencies": [
+    "nlohmann-json",
+    {
+      "name": "cpp-httplib",
+      "features": ["openssl"]
+    }
+  ]
+}
