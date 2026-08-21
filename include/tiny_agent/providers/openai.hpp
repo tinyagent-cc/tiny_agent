@@ -190,13 +190,27 @@ private:
         m.content = (msg.contains("content") && !msg["content"].is_null())
             ? msg["content"].get<std::string>() : std::string{};
 
-        if (msg.contains("tool_calls"))
-            for (auto& tc : msg["tool_calls"])
+        if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
+            for (auto& tc : msg["tool_calls"]) {
+                if (!tc.contains("function")) continue;
+                auto& fn = tc["function"];
+                // Arguments arrive as a JSON string. A model can emit a truncated
+                // or malformed one; keep it as _raw_arguments so the tool reports
+                // a bad-argument error the model can retry, instead of throwing
+                // out of the whole agent loop.
+                json args = json::object();
+                auto raw_args = fn.value("arguments", std::string{});
+                if (!raw_args.empty()) {
+                    try { args = json::parse(raw_args); }
+                    catch (const std::exception&) { args = json{{"_raw_arguments", raw_args}}; }
+                }
                 m.tool_calls.push_back({
-                    tc["id"].get<std::string>(),
-                    tc["function"]["name"].get<std::string>(),
-                    json::parse(tc["function"]["arguments"].get<std::string>())
+                    tc.value("id", std::string{}),
+                    fn.value("name", std::string{}),
+                    std::move(args)
                 });
+            }
+        }
         return m;
     }
 
@@ -274,7 +288,9 @@ public:
         self.extra = extra;
         self.log = log;
 
-        auto cfg = overrides.api_key.empty() ? self : LLMConfig::merge(self, overrides);
+        // Always merge: a per-call override of temperature or max_tokens has to
+        // land even when the caller did not also hand over an api_key.
+        auto cfg = LLMConfig::merge(self, overrides);
         lg.debug("llm", "openai chat (model=" + model
             + " messages=" + std::to_string(msgs.size())
             + " tools=" + std::to_string(tools.size()) + ")");
@@ -305,7 +321,19 @@ public:
                 std::string("openai returned invalid JSON: ") + e.what());
         }
 
+        // OpenAI-compatible servers (Ollama, llama.cpp, vLLM, gateways) sometimes
+        // answer 200 with an error envelope instead of choices. Say so plainly
+        // rather than letting nlohmann throw a type error about a missing key.
+        if (!parsed.contains("choices") || !parsed["choices"].is_array()
+            || parsed["choices"].empty())
+            throw APIError(res->status,
+                "openai response has no choices: " + res->body.substr(0, 512));
+
         auto& choice = parsed["choices"][0];
+        if (!choice.contains("message"))
+            throw APIError(res->status,
+                "openai choice has no message: " + res->body.substr(0, 512));
+
         LLMResponse response{
             parse_choice(choice),
             parsed.value("usage", json::object()),

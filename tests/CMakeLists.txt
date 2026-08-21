@@ -18,6 +18,7 @@ set(UNIT_TESTS
     test_summarize
     test_rationalize
     test_memory
+    test_hardening
 )
 
 foreach(t ${UNIT_TESTS})

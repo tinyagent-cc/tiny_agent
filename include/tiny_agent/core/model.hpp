@@ -90,9 +90,13 @@ struct LLMConfig {
 
     Log log;
 
+    // Field-by-field override: anything the caller left at its default keeps the
+    // base value. An override that only sets api_key used to replace the whole
+    // config, silently dropping base_url, headers, timeout and log — a per-call
+    // key swap would quietly retarget the request at api.openai.com.
     static LLMConfig merge(const LLMConfig& base, const LLMConfig& overrides) {
-        if (overrides.api_key.size()) return overrides;
         LLMConfig c = base;
+        if (!overrides.api_key.empty())             c.api_key = overrides.api_key;
         if (!overrides.base_url.empty())            c.base_url = overrides.base_url;
         if (!overrides.api_version.empty())         c.api_version = overrides.api_version;
         if (overrides.temperature)                  c.temperature = overrides.temperature;
