@@ -38,6 +38,7 @@ get the batch path where it exists and a loop where it does not.
 | `HnswVectorStore` | `vectorstore/hnswlib.hpp` | hnswlib (`-DTINY_AGENT_HNSWLIB=ON`) |
 | `QdrantVectorStore` | `vectorstore/qdrant.hpp` | a running Qdrant |
 | `ChromaVectorStore` | `vectorstore/chroma.hpp` | a running Chroma |
+| `WeaviateVectorStore` | `vectorstore/weaviate.hpp` | a running Weaviate |
 | `AnyVectorStore` | `retriever.hpp` | nothing, wraps any of the above |
 
 `FlatVectorStore` is an O(n) scan. It is the right choice up to a few thousand
@@ -115,6 +116,60 @@ JSON text rather than being dropped, so nothing is lost, just flattened.
 record-delete endpoint removes everything when given neither `ids` nor a `where`
 clause.
 
+## Weaviate
+
+```cpp
+#include <tiny_agent/vectorstore/weaviate.hpp>
+
+WeaviateVectorStore store{"http://localhost:8080", "my_docs",
+                          WeaviateConfig{.api_key = "…", .distance = "cosine"}};
+```
+
+HTTP only, no gRPC and no client library. The collection is created on the first
+write with `vectorizer: none`, which is what makes the server keep the vectors
+you hand it instead of embedding the text with whatever
+`DEFAULT_VECTORIZER_MODULE` it was started with. No dimension goes in the schema:
+Weaviate sizes the index from the first object, where Qdrant wants the width at
+creation time.
+
+**Collection names.** A Weaviate collection is a GraphQL type, so its name has to
+be a GraphQL type name. Pass `my_docs` and the server stores `My_docs`, then
+answers 404 for every path spelled the way you asked. The adapter capitalises at
+construction and works with the capitalised form throughout, so `collection()`
+reports the name the server actually holds. A name GraphQL cannot express, like
+`my-docs` or `9docs`, throws rather than failing later with a 422.
+
+**Object ids** must be UUIDs, the same constraint Qdrant has, so the adapter uses
+the same fix: hash your id into a UUID for the wire, keep the original in a
+`tiny_agent_id` property, and give it back from `search()`. The mapping is
+deterministic, so re-adding an id updates the object.
+
+**Search is GraphQL.** Weaviate 1.39 has one REST search path,
+`POST /v1/search/{collection}/near-text`, and it needs a vectorizer module.
+Bring-your-own-vector search runs through `POST /v1/graphql` with `nearVector`,
+so `search()` builds query text rather than a JSON body. Nothing the caller
+supplies is interpolated as a string: the collection name is validated in the
+constructor and everything else in the query is a number.
+
+**Two things answer 200 when they failed.** GraphQL always answers 200 and puts
+the failure in an `errors` array, so `search()` reads the body rather than the
+status. `POST /v1/batch/objects` answers 200 with a per-object `result.status`,
+which means a dimension mismatch in one document of a batch looks like a
+successful request. `add_batch()` checks every object and throws with the
+server's message.
+
+**Metadata** is stored as one JSON text property, so nested objects and arrays
+come back as the value you put in rather than flattened to text the way Chroma
+needs. The trade is that Weaviate's `where` filters cannot see inside it, which
+costs nothing through this interface because it does not expose filtering.
+
+`size()` asks the server (`Aggregate { … { meta { count } } }`), and a collection
+that does not exist counts as empty. `clear()` deletes the collection; the next
+write recreates it.
+
+`docs/proofs/weaviate.md` has the probes those decisions came from, run against
+`semitechnologies/weaviate:1.39.0`.
+
 ## Picking a backend at runtime
 
 The concept resolves at compile time, which is what you want when the backend is
@@ -133,23 +188,24 @@ unchanged.
 
 ## Writing an adapter
 
-Implement the four methods against whatever you have. If it is a REST service,
-`vectorstore/qdrant.hpp` and `vectorstore/chroma.hpp` are the pattern to copy:
-keep an `httplib::Client`, and factor the request body and response parsing into
-static pure functions so the wire format is testable without a server. That is
-what lets `tests/test_vectorstore_remote.cpp` cover both adapters offline and
-run the same round-trip against a live server when `QDRANT_URL` or `CHROMA_URL`
-is set.
+Implement the four methods against whatever you have. If it is an HTTP service,
+`vectorstore/qdrant.hpp`, `vectorstore/chroma.hpp` and `vectorstore/weaviate.hpp`
+are the pattern to copy: keep an `httplib::Client`, and factor the request body
+and response parsing into static pure functions so the wire format is testable
+without a server. That is what lets `tests/test_vectorstore_remote.cpp` and
+`tests/test_vs_weaviate.cpp` cover the adapters offline and run the same
+round-trip against a live server when `QDRANT_URL`, `CHROMA_URL` or
+`WEAVIATE_URL` is set.
 
 ## Example
 
 `examples/19_vector_store.cpp` indexes a small corpus and queries it through
-`FlatVectorStore`, Qdrant, Chroma and `AnyVectorStore` in one run. All four
-return the same ranking and the same scores, which is the point of normalizing
-the metric in the adapters.
+`FlatVectorStore`, Qdrant, Chroma, Weaviate and `AnyVectorStore` in one run. They
+all return the same ranking and the same scores, which is the point of
+normalizing the metric in the adapters.
 
 ```bash
 ./build/examples/19_vector_store
 QDRANT_URL=http://localhost:6333 CHROMA_URL=http://localhost:8000 \
-  ./build/examples/19_vector_store
+  WEAVIATE_URL=http://localhost:8080 ./build/examples/19_vector_store
 ```
