@@ -5,6 +5,8 @@
 #include "mock_model.hpp"
 #include <sstream>
 #include <cstdlib>
+#include <chrono>
+#include <thread>
 
 using namespace tiny_agent;
 using tiny_agent::test::MockChat;
@@ -547,6 +549,44 @@ TEST_CASE("live Phoenix export against a running instance") {
     REQUIRE_NOTHROW(exporter->export_spans({s}));
 }
 
+// Reads the ingested observations back out of Langfuse. Ingestion is
+// asynchronous (the web tier queues, the worker writes to ClickHouse), so this
+// polls until the expected count shows up or the budget runs out.
+static json langfuse_read_observations(const std::string& base_url,
+                                       const std::string& auth_header,
+                                       const std::string& trace_id,
+                                       std::size_t expected,
+                                       int attempts = 30) {
+    auto url  = obs::detail::split_url(base_url + "/api/public/v2/observations");
+    httplib::Client client(url.origin);
+    client.set_read_timeout(10);
+    client.set_default_headers({{"Authorization", auth_header}});
+#ifdef __APPLE__
+    client.set_ca_cert_path("/etc/ssl/cert.pem");
+#endif
+
+    json last = json::object();
+    for (int i = 0; i < attempts; ++i) {
+        auto res = client.Get(url.path + "?traceId=" + trace_id
+                              + "&fields=core,basic,time,io,model,usage,metrics,trace_context");
+        if (res && res->status == 200) {
+            last = json::parse(res->body, nullptr, false);
+            if (!last.is_discarded() && last.contains("data")
+                && last["data"].size() >= expected)
+                return last;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+    return last;
+}
+
+static const json& observation_named(const json& body, const std::string& name) {
+    for (const auto& o : body.at("data"))
+        if (o.at("name") == name) return o;
+    static const json none = json();
+    return none;
+}
+
 TEST_CASE("live Langfuse export against configured credentials") {
     const char* pk = std::getenv("LANGFUSE_PUBLIC_KEY");
     const char* sk = std::getenv("LANGFUSE_SECRET_KEY");
@@ -555,13 +595,72 @@ TEST_CASE("live Langfuse export against configured credentials") {
         REQUIRE_FALSE(configured);
         return;
     }
-    const char* base = std::getenv("LANGFUSE_BASE_URL");
-    auto exporter = obs::langfuse_exporter({
-        .base_url = base ? base : "https://cloud.langfuse.com",
-        .public_key = pk, .secret_key = sk,
-        .service_name = "tiny_agent_test"});
-    auto s = sample_span();
-    s.trace_id = obs::new_trace_id();
-    s.span_id  = obs::new_span_id();
-    REQUIRE_NOTHROW(exporter->export_spans({s}));
+    const char* base_env = std::getenv("LANGFUSE_BASE_URL");
+    std::string base = base_env ? base_env : "https://cloud.langfuse.com";
+    while (!base.empty() && base.back() == '/') base.pop_back();
+
+    obs::LangfuseConfig cfg{.base_url = base,
+                            .public_key = pk, .secret_key = sk,
+                            .service_name = "tiny_agent_test"};
+    cfg.session_id = "tiny-agent-live-session";
+    cfg.user_id    = "tiny-agent-live-user";
+    cfg.trace_name = "live-roundtrip";
+    auto exporter = obs::langfuse_exporter(cfg);
+
+    // A two-span trace: an agent root and a failing model call under it. That
+    // covers parenting, the observation-type vocabulary, and the error path,
+    // none of which a single healthy span would exercise.
+    const auto trace_id = obs::new_trace_id();
+
+    obs::Span root;
+    root.trace_id = trace_id;
+    root.span_id  = obs::new_span_id();
+    root.name     = "live-roundtrip";
+    root.kind     = obs::SpanKind::agent;
+    root.status   = obs::SpanStatus::ok;
+    root.input    = R"({"question":"round trip"})";
+    root.output   = "done";
+    root.start_unix_nano = obs::now_unix_nano();
+    root.end_unix_nano   = root.start_unix_nano + 1'500'000'000ULL;
+
+    auto child = sample_span();
+    child.trace_id       = trace_id;
+    child.span_id        = obs::new_span_id();
+    child.parent_span_id = root.span_id;
+    child.name           = "live-chat";
+    child.status         = obs::SpanStatus::error;
+    child.status_message = "rate limited";
+    child.start_unix_nano = root.start_unix_nano;
+    child.end_unix_nano   = root.start_unix_nano + 900'000'000ULL;
+
+    REQUIRE_NOTHROW(exporter->export_spans({root, child}));
+    MESSAGE("langfuse trace id: " << trace_id);
+
+    // Same Basic header the exporter builds, so the read path proves the
+    // credential encoding the write path used.
+    auto body = langfuse_read_observations(
+        base, obs::langfuse_otlp_config(cfg).headers.at("Authorization"),
+        trace_id, 2);
+    REQUIRE(body.contains("data"));
+    REQUIRE(body["data"].size() == 2);
+
+    const auto& gen = observation_named(body, "live-chat");
+    REQUIRE_FALSE(gen.is_null());
+    CHECK(gen.at("type")        == "GENERATION");
+    CHECK(gen.at("level")       == "ERROR");
+    CHECK(gen.at("statusMessage") == "rate limited");
+    CHECK(gen.at("model")       == "gpt-4o-mini");
+    CHECK(gen.at("input")       == R"([{"role":"user","content":"hi"}])");
+    CHECK(gen.at("output")      == "Hello!");
+    CHECK(gen.at("usageDetails").at("input")  == 12);
+    CHECK(gen.at("usageDetails").at("output") == 3);
+    CHECK(gen.at("sessionId")   == "tiny-agent-live-session");
+    CHECK(gen.at("userId")      == "tiny-agent-live-user");
+    CHECK(gen.at("traceName")   == "live-roundtrip");
+
+    const auto& agent = observation_named(body, "live-roundtrip");
+    REQUIRE_FALSE(agent.is_null());
+    CHECK(agent.at("type")                == "AGENT");
+    CHECK(agent.at("isRootObservation")   == true);
+    CHECK(gen.at("parentObservationId")   == agent.at("id"));
 }

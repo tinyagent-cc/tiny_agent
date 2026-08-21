@@ -111,6 +111,12 @@ Spans go to `POST /api/public/otel/v1/traces` as OTLP/HTTP JSON with Basic auth
 over the key pair, carrying OTel GenAI and Langfuse attributes
 (`gen_ai.request.model`, `gen_ai.usage.*`, `langfuse.observation.type`).
 
+Round-tripped against self-hosted Langfuse 4.16.0 on 2026-08-21: a two-span
+trace exported and then read back out of the public API with its parenting,
+observation types, input and output, token counts, error level and session and
+user ids intact. The run is written up in
+[`proofs/langfuse.md`](proofs/langfuse.md).
+
 **Why the OTel endpoint and not the native ingestion API.** Langfuse's
 `/api/public/ingestion` batch API is deprecated: Cloud sunsets it on 2026-11-16
 and self-hosted v4 disables it under the default write mode. Shipping a second
@@ -119,6 +125,10 @@ implements the path Langfuse itself recommends.
 
 Default `base_url` is Cloud EU. Use `https://us.cloud.langfuse.com` for US, or
 your own URL for self-hosted (needs v3.22.0 or newer for the OTel endpoint).
+
+On a self-hosted v4, reading traces back is `GET /api/public/v2/observations`.
+The older `GET /api/public/traces` is off under v4's default `events_only` write
+mode and answers with a message saying so.
 
 `session_id`, `user_id` and `trace_name` are stamped onto every span rather than
 just the root, because Langfuse reads trace-level fields off whichever span it
