@@ -25,6 +25,7 @@ set(UNIT_TESTS
     test_readme_snippets
     test_vs_weaviate
     test_vs_redis
+    test_vs_milvus
 )
 
 foreach(t ${UNIT_TESTS})
