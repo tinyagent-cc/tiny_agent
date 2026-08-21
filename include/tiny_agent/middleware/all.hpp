@@ -14,6 +14,7 @@
 #include "model_retry.hpp"
 #include "model_fallback.hpp"
 #include "pii.hpp"
+#include "context.hpp"
 #include "context_editing.hpp"
 #include "summarize.hpp"
 #include "rationalize.hpp"

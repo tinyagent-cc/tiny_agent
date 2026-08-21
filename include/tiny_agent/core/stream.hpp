@@ -78,7 +78,15 @@ public:
         m.role    = Role::assistant;
         m.content = text_;
         for (auto& t : tools_) {
-            json args = t.args.empty() ? json::object() : json::parse(t.args);
+            // A stream can be cut off mid-arguments, leaving unparseable JSON.
+            // Preserve the fragment under _raw_arguments so the tool call fails
+            // with a message the model can act on, rather than throwing here and
+            // discarding a response that is otherwise complete.
+            json args = json::object();
+            if (!t.args.empty()) {
+                try { args = json::parse(t.args); }
+                catch (const std::exception&) { args = json{{"_raw_arguments", t.args}}; }
+            }
             m.tool_calls.push_back({std::string{}, t.name, std::move(args)});
         }
         LLMResponse r;
