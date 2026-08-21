@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use tiny_agent in your work, please cite it using the metadata below."
+type: software
+title: tiny_agent
+authors:
+  - family-names: Haj Amor
+    given-names: Riadh
+repository-code: "https://github.com/rhajamor/tiny_agent"
+license: MIT
+abstract: >-
+  tiny_agent is a header-only C++20 AI agent framework for building
+  tool-using agents in C++: multi-provider from the start, MCP built in
+  over stdio and HTTP, MIT licensed, and small enough to run at the edge,
+  on a Raspberry Pi or against a local llama.cpp server.

@@ -3,18 +3,22 @@
 [![CI](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**The header-only C++20 agent framework: multi-provider, MCP built in, MIT licensed, and small enough to run your agent on a Raspberry Pi.**
+tiny_agent is a header-only C++20 AI agent framework for building tool-using
+agents in C++: multi-provider from the start, MCP built in over stdio and
+HTTP, MIT licensed, and small enough to run at the edge, on a Raspberry Pi
+or against a local llama.cpp server.
 
 Inference in C++ is solved. llama.cpp and Ollama run the model, and llama.cpp's
 own docs say the agent loop is the caller's problem. That loop is what
 tiny_agent is: the delegation, the middleware, the tools, the memory, in a few
 thousand lines of headers with no virtual dispatch anywhere in the dispatch
 path. Point it at a frontier API or at a llama.cpp server on localhost and the
-agent code does not change.
+agent code does not change, whether it's one tool call or a deep agent with
+sub-agents several layers down.
 
 Three things carry the library.
 
-## Sub-agents that are just tools
+## DeepAgent: sub-agents that are just tools
 
 `DeepAgent` runs a ReAct loop: call the model, dispatch the tools it asked for,
 feed the results back, repeat. What makes it a *deep* agent is that an agent can
@@ -133,7 +137,7 @@ builds one at runtime. `Runnable` composes models, agents and plain lambdas with
 - **[Context management](docs/context-management.md)** against an explicit token budget
 - Multimodal messages, embeddings, batch, an agent-skills registry
 
-## Footprint
+## Footprint: run an AI agent on a Raspberry Pi or Jetson
 
 Measured, not estimated (details in [docs/benchmarks.md](docs/benchmarks.md)): a
 complete streaming agent example is a **7.7 MB** stripped single binary (macOS
@@ -146,8 +150,10 @@ server:
 
 | Raspberry Pi 5 | Jetson Orin Nano |
 |---|---|
-| ![17_streaming on a Raspberry Pi 5](docs/assets/pi5-streaming.gif) | ![17_streaming on a Jetson Orin Nano](docs/assets/jetson-streaming.gif) |
+| ![Terminal recording of the 17_streaming example streaming tokens from a local llama.cpp server on a Raspberry Pi 5, CPU only](docs/assets/pi5-streaming.gif) | ![Terminal recording of the 17_streaming example streaming tokens from a local llama.cpp server on an NVIDIA Jetson Orin Nano, GPU inference offloaded via CUDA](docs/assets/jetson-streaming.gif) |
 | Qwen2.5-3B-Instruct, CPU only: 5.48 tok/s | Qwen2.5-3B-Instruct, GPU, 36 layers offloaded: 23.85 tok/s |
+
+### tiny_agent vs ai-sdk-cpp and agents.cpp
 
 How that compares in the C++ agent space, structurally:
 
@@ -366,6 +372,62 @@ MILVUS_URL=http://localhost:19530 ctest --preset default -R test_vs_milvus
 - **Linux**: any recent GCC or Clang with C++20. Install `build-essential`, `cmake`, `git`, `curl`, `zip`, `unzip`, `tar`.
 - **Raspberry Pi**: 64-bit Raspberry Pi OS, the Linux steps, and `--preset release`. Cloud providers work fine because the inference happens elsewhere; for local inference point `local::llamacpp()` at any OpenAI-compatible server on the Pi or on your network.
 - **Windows**: Visual Studio 2022 Build Tools with the C++ workload. The MCP stdio transport is POSIX-only, so `04_mcp_client` is not built there.
+
+## FAQ
+
+**Is it really header-only, and what are the dependencies?**
+Yes: `#include <tiny_agent/tiny_agent.hpp>` and you're building against headers,
+no separate library step. The library itself needs nlohmann-json and
+cpp-httplib with OpenSSL; doctest, libenvpp and json-schema-validator are
+test-only. `TINY_AGENT_HNSWLIB` pulls in hnswlib if you want that vector
+store, off by default.
+
+**Which LLM providers work?**
+Seven ship in the box: OpenAI, Anthropic, Gemini, Mistral, Cohere, VoyageAI,
+and any OpenAI-compatible endpoint through `local::ollama()`,
+`local::llamacpp()` or `local::vllm()`. Each is a full specialization of
+`LLMModel<Provider, Kind>` satisfying a concept rather than a virtual
+interface, so adding one is a header, not a change to the core.
+
+**Does it run fully offline and local?**
+Against a local server, yes: point `local::llamacpp()`, `local::ollama()` or
+`local::vllm()` at a server on your machine or LAN and nothing leaves it. The
+offline test suite runs the same way, 383 cases with no network and no keys.
+Cloud providers need a connection, obviously; the agent code doesn't change
+either way.
+
+**How small is it really?**
+A complete streaming agent example is a 7.7 MB stripped binary on macOS
+arm64, TLS included, and 7.4-7.6 MB on a Raspberry Pi 5 or a Jetson Orin
+Nano. Client RSS while streaming from a local llama.cpp server measured 2.0
+MB on the Pi 5. Full numbers and methodology: [docs/benchmarks.md](docs/benchmarks.md).
+
+**Does it support MCP?**
+Yes, both transports, stdio and HTTP, with no paid tier gating either one.
+`mcp::connect_stdio()` and the HTTP client discover tools from a running
+server and hand them to an agent the same way as any other tool.
+[`04_mcp_client.cpp`](examples/04_mcp_client.cpp) and
+[`12_mcp_http.cpp`](examples/12_mcp_http.cpp) cover the two transports.
+
+**How do agents call other agents?**
+`agent_as_tool()` wraps a `shared_ptr<Agent>` in a `DynamicTool` with a JSON
+schema, so a director agent calls an analyst agent the same way it calls any
+function, and the analyst can call a fact-checker in turn. Each sub-agent
+can run a different model from a different provider. That's the whole
+mechanism behind DeepAgent: no separate delegation concept, just a tool.
+
+**What C++ standard and compilers does it need?**
+C++20, set by `CMAKE_CXX_STANDARD 20` in the build. CI compiles and runs the
+test suite on every push across Linux x64 and arm64, macOS arm64, and
+Windows x64. One known gap: `16_deep_agent_custom.cpp` doesn't compile on
+g++ 11.4, which keeps two `init_chat_model` overloads in the candidate set
+for a braced initializer; newer GCC and Clang resolve it fine.
+
+**What's the license?**
+MIT, copyright Riadh Haj Amor. Vendor it, link it, modify it, ship it inside
+a closed-source or commercial product, all without asking; the only
+obligation is keeping the copyright notice and license text with the code
+you took it from. Full text: [LICENSE](LICENSE).
 
 ## License
 
