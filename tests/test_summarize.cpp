@@ -63,7 +63,7 @@ TEST_CASE("extractive_summarize: skips empty messages") {
 // summarize() runtime middleware (compile-time Summarize<> removed)
 
 TEST_CASE("summarize: compresses when over threshold") {
-    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2, .fallback = middleware::extractive_summarize});
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2, .fallback = [](const std::vector<Message>& m) { return middleware::extractive_summarize(m); }});
     std::vector<Message> msgs = {
         Message::system("system prompt"),
         Message::user("first question"),
@@ -85,7 +85,7 @@ TEST_CASE("summarize: compresses when over threshold") {
 }
 
 TEST_CASE("summarize: preserves recent messages") {
-    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 3, .fallback = middleware::extractive_summarize});
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 3, .fallback = [](const std::vector<Message>& m) { return middleware::extractive_summarize(m); }});
     std::vector<Message> msgs = {
         Message::user("old1"),
         Message::assistant("old2"),
@@ -103,7 +103,7 @@ TEST_CASE("summarize: preserves recent messages") {
 }
 
 TEST_CASE("summarize: works without system prompt") {
-    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2, .fallback = middleware::extractive_summarize});
+    auto mw = middleware::summarize({.trigger_tokens = 1, .keep_recent = 2, .fallback = [](const std::vector<Message>& m) { return middleware::extractive_summarize(m); }});
     std::vector<Message> msgs = {
         Message::user("What is the capital of France and why is it important?"),
         Message::assistant("Paris is the capital and a major cultural center."),
@@ -172,7 +172,7 @@ TEST_CASE("summarize runtime: custom summarizer") {
     auto mw = middleware::summarize({
         .trigger_tokens = 1,
         .keep_recent = 1,
-        .summarizer = [](const std::vector<Message>&) {
+        .fallback = [](const std::vector<Message>&) {
             return "runtime custom summary";
         },
     });
