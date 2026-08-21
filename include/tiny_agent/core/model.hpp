@@ -3,6 +3,7 @@
 #include "log.hpp"
 #include "tool.hpp"
 #include "runnable.hpp"
+#include "stream.hpp"
 #include <httplib.h>
 #include <concepts>
 #include <functional>
@@ -27,6 +28,23 @@ concept is_chat =
         { m.chat(msgs, tools)  } -> std::same_as<LLMResponse>;
         { m.model_name()       } -> std::convertible_to<std::string>;
         { m.get_temperature()  } -> std::convertible_to<float>;
+    };
+
+// ─── is_streaming_chat concept (optional refinement of is_chat) ───────────────
+//
+// A chat model that can additionally stream: same inputs as chat(), plus a
+// StreamHandler fed live deltas, returning the fully accumulated LLMResponse.
+// Nothing in is_chat changes — providers without streaming still satisfy is_chat.
+// Callers branch with `if constexpr (is_streaming_chat<T>)`; no virtual dispatch.
+
+template<typename T>
+concept is_streaming_chat =
+    is_chat<T> &&
+    requires(T m,
+             const std::vector<Message>& msgs,
+             const std::vector<ToolSchema>& tools,
+             const StreamHandler& handler) {
+        { m.chat_stream(msgs, tools, handler) } -> std::same_as<LLMResponse>;
     };
 
 template<typename T>
@@ -163,8 +181,18 @@ public:
         return out;
     }
 
-    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& = {}) {
-        cb(invoke(std::move(prompt)));
+    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
+        std::visit([&](auto& m) {
+            using M = std::remove_reference_t<decltype(m)>;
+            if constexpr (is_streaming_chat<M>) {
+                std::vector<Message> msgs = {Message::user(std::move(prompt))};
+                m.chat_stream(msgs, {}, [&](const StreamEvent& e) {
+                    if (e.kind == StreamEvent::Kind::text_delta) cb(e.text);
+                });
+            } else {
+                cb(m.invoke(std::move(prompt), cfg));
+            }
+        }, v_);
     }
 };
 

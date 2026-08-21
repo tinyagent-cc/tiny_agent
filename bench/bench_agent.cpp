@@ -141,7 +141,7 @@ struct MockLLM {
     }
 
     std::string model_name() const { return model; }
-    float temperature() const { return 0.7f; }
+    float get_temperature() const { return 0.7f; }
 
     std::vector<std::string> batch(std::vector<std::string> inputs, const RunConfig& cfg = {}) {
         std::vector<std::string> out;
@@ -605,7 +605,7 @@ static std::vector<BenchResult> bench_agent_loop() {
     // Simple run: no tools, no middleware
     {
         MockLLM llm;
-        AgentExecutor agent{std::move(llm), AgentConfig{.name = "bare"}};
+        agents::DeepAgent agent{std::move(llm), AgentConfig{.name = "bare"}};
         results.push_back(bench("agent.run (no tools, no mw)", [&] {
             auto r = agent.run("What is 2+2?");
             (void)r;
@@ -617,7 +617,7 @@ static std::vector<BenchResult> bench_agent_loop() {
         MockLLM llm;
         llm.tool_calls_to_emit = 1;
         auto tool = make_math_tool("add", [](int a, int b) { return a + b; });
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "single_tool",
             .tools = {tool},
             .max_iterations = 5}};
@@ -637,7 +637,7 @@ static std::vector<BenchResult> bench_agent_loop() {
             make_math_tool("mul", [](int a, int b) { return a * b; }),
             make_math_tool("sub", [](int a, int b) { return a - b; }),
         };
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "multi_tool",
             .tools = tools,
             .max_iterations = 5}};
@@ -660,7 +660,7 @@ static std::vector<BenchResult> bench_agent_loop() {
             middleware::trim_history(20),
             middleware::logging(Log{devnull, LogLevel::off}),
         };
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "mw_agent",
             .tools = tools,
             .middlewares = mws,
@@ -697,7 +697,7 @@ static std::vector<BenchResult> bench_agent_loop() {
             middleware::model_call_limit({.limit = 100}),
             middleware::tool_call_limit({.limit = 50}),
         };
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "full_stack",
             .tools = tools,
             .middlewares = mws,
@@ -712,7 +712,7 @@ static std::vector<BenchResult> bench_agent_loop() {
     // Chat: multi-turn conversation
     {
         MockLLM llm;
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "chat_agent",
             .system_prompt = "IoT chat assistant"}};
         results.push_back(bench("agent.chat (10 turns)", [&] {
@@ -830,7 +830,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
                  {"properties", {{"pin", {{"type", "integer"}}}}},
                  {"required", {"pin"}}});
 
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "gpio_monitor",
             .system_prompt = "Monitor GPIO pins. Report state changes.",
             .tools = {gpio_tool},
@@ -855,7 +855,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
                     return json{{"value", 23.5}, {"unit", "C"}, {"timestamp", 1234567890}};
                 }));
         }
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "sensor_agg",
             .system_prompt = "Aggregate all sensor readings.",
             .tools = sensor_tools,
@@ -872,7 +872,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
     {
         MockLLM llm;
         std::ostringstream devnull;
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "chat_managed",
             .system_prompt = "IoT device assistant.",
             .middlewares = {
@@ -896,7 +896,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
             middleware::pii({.pii_type = "ip", .strategy = "redact"}),
             middleware::pii({.pii_type = "phone", .strategy = "redact"}),
         };
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "pii_safe",
             .middlewares = mws,
             .max_iterations = 2}};
@@ -937,7 +937,7 @@ static std::vector<BenchResult> bench_constrained_scenarios() {
             middleware::tool_call_limit({.limit = 30}),
         };
 
-        AgentExecutor agent{std::move(llm), AgentConfig{
+        agents::DeepAgent agent{std::move(llm), AgentConfig{
             .name = "embedded_prod",
             .tools = tools,
             .middlewares = mws,

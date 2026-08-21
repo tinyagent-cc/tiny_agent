@@ -1,16 +1,37 @@
 # tiny_agent
 
-`tiny_agent` is a header-only C++20 agent framework for building LLM-powered applications with a small, composable API.
+[![CI](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**The header-only C++20 agent framework: multi-provider, MCP built in, MIT licensed, and small enough to run your agent on a Raspberry Pi.**
+
+Agent inference in C++ is a solved problem (llama.cpp, Ollama). Agent *orchestration* in C++ is not: the loop, the tools, the memory, the delegation. `tiny_agent` is that layer, in a few thousand lines of headers with no virtual dispatch, built on C++20 concepts and `std::variant`. Point it at a frontier API or at a llama.cpp server on localhost; the agent code is identical.
 
 It includes:
-- OpenAI, Anthropic, and Gemini providers
-- local OpenAI-compatible providers such as Ollama, llama.cpp, and vLLM
-- tool calling with JSON schemas
-- multi-turn chat and conversation history
-- middleware
-- nested/sub-agent delegation
-- MCP stdio integration
+- OpenAI, Anthropic, Gemini, Mistral, and Cohere chat providers, plus any OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM, OpenRouter)
+- a ReAct agent loop with tool calling (JSON-schema validated), multi-turn history, and sub-agent delegation
+- true SSE token streaming, including tool-call deltas, on the OpenAI-compatible and Anthropic paths
+- MCP over stdio and HTTP
+- [Agent Skills](https://agentskills.io) (`SKILL.md`) loading
+- built-in middleware: summarize, trim-history, PII, retry, model fallback, context editing, call limits, logging, and more
+- embeddings, vector stores (flat, hnswlib, Qdrant), and a retriever
 - multimodal messages
+
+## Footprint
+
+Measured, not estimated (details in [docs/benchmarks.md](docs/benchmarks.md)): a complete streaming agent example is a **7.7 MB** stripped single binary (macOS arm64, TLS included), and the client uses **5.7 MB RSS** while streaming from llama.cpp on a Raspberry Pi 5. The agent layer is not the cost; the model is. CI builds and tests every push on arm64, the same CPU class as a Pi 5.
+
+How that compares in the C++ agent space, structurally:
+
+| | tiny_agent | [ai-sdk-cpp](https://github.com/ClickHouse/ai-sdk-cpp) | [agents.cpp](https://github.com/RunEdgeAI/agents.cpp) |
+|---|---|---|---|
+| Header-only | yes | no | no |
+| License | MIT | Apache-2.0 | evaluation license, MCP in paid tier |
+| MCP | stdio + HTTP, free | no | paid |
+| Local models (Ollama/llama.cpp) | yes | OpenAI-compatible only | yes |
+| Gemini | yes | no | yes |
+| Build | CMake + vcpkg | CMake | Bazel |
+| Agent Skills (SKILL.md) | yes | no | no |
 
 ## Requirements
 
@@ -320,6 +341,8 @@ The repository currently builds these examples:
 - `05_middleware`: logging, retry, trim-history, and custom middleware
 - `06_deep_agent`: multi-level delegation with fact-checking
 - `07_multimodal`: image + text message input
+- `08_batch` through `16_deep_agent_custom`: batching, runtime provider selection, built-in middleware, Agent Skills, MCP over HTTP, embeddings and retrieval, bind/kwargs, LLM summarize, custom deep agents
+- `17_streaming`: token-by-token SSE streaming against a local Ollama or llama.cpp server (`OLLAMA_BASE_URL`, `OLLAMA_MODEL`)
 
 Most examples use `OPENAI_API_KEY`, so set that first.
 

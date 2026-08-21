@@ -8,12 +8,78 @@
 
 #include "../core/model.hpp"
 #include "../core/tool.hpp"
+#include "../core/sse.hpp"
 #include <limits>
 #include <memory>
 
 namespace tiny_agent {
 
 struct OpenAI {};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  OpenAIStreamDecoder  —  translate OpenAI-compatible SSE into StreamEvents
+//
+//  A stateful functor: fed one sse::Event at a time, it emits normalized
+//  StreamEvents to the sink.  The "[DONE]" sentinel is a no-op; tool-call ids
+//  are stashed by index and written back onto the folded response via
+//  restore_ids() (StreamEvent carries no id).  Shared by every OpenAI-compatible
+//  endpoint (OpenAI, Ollama, llama.cpp, vLLM, Mistral, …).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+struct OpenAIStreamDecoder {
+    std::map<int, std::string> ids_;
+    bool started_ = false;
+
+    void operator()(const sse::Event& ev, const StreamHandler& sink) {
+        if (ev.data == "[DONE]") return;
+
+        json j;
+        try { j = json::parse(ev.data); } catch (...) { return; }
+        if (!j.contains("choices") || j["choices"].empty()) return;
+
+        if (!started_) {
+            started_ = true;
+            sink(StreamEvent{StreamEvent::Kind::message_start});
+        }
+
+        auto& choice = j["choices"][0];
+        auto& delta  = choice["delta"];
+
+        if (delta.contains("content") && !delta["content"].is_null()) {
+            auto text = delta["content"].get<std::string>();
+            if (!text.empty()) {
+                StreamEvent s{StreamEvent::Kind::text_delta};
+                s.text = std::move(text);
+                sink(s);
+            }
+        }
+
+        if (delta.contains("tool_calls")) {
+            for (auto& tc : delta["tool_calls"]) {
+                StreamEvent s{StreamEvent::Kind::tool_call_delta};
+                s.tool_index = tc.value("index", 0);
+                if (tc.contains("id") && !tc["id"].is_null())
+                    ids_[s.tool_index] = tc["id"].get<std::string>();
+                if (tc.contains("function")) {
+                    auto& fn = tc["function"];
+                    if (fn.contains("name") && !fn["name"].is_null())
+                        s.tool_name = fn["name"].get<std::string>();
+                    if (fn.contains("arguments") && !fn["arguments"].is_null())
+                        s.tool_args = fn["arguments"].get<std::string>();
+                }
+                sink(s);
+            }
+        }
+
+        if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
+            StreamEvent s{StreamEvent::Kind::finish};
+            s.finish_reason = choice["finish_reason"].get<std::string>();
+            sink(s);
+        }
+    }
+
+    void restore_ids(LLMResponse& r) const { detail::restore_tool_ids(r, ids_); }
+};
 
 template<> struct LLMModel<OpenAI, chat_tag>;
 template<> class LLMModel<OpenAI, embedding_tag>;
@@ -252,6 +318,64 @@ public:
         return response;
     }
 
+    // ── Streaming chat (is_streaming_chat) ──────────────────────────────────
+    //
+    // Sends `stream: true`, feeds transport chunks through sse::Parser and
+    // OpenAIStreamDecoder into both the live handler and a StreamAccumulator,
+    // and returns the fully accumulated LLMResponse — so a streaming call also
+    // yields the complete response the agent loop consumes non-streaming.
+
+    LLMResponse chat_stream(const std::vector<Message>& msgs,
+                            const std::vector<ToolSchema>& tools,
+                            const StreamHandler& on_event) {
+        auto& lg = log;
+        auto cfg = config();
+        lg.debug("llm", "openai chat_stream (model=" + model
+            + " messages=" + std::to_string(msgs.size())
+            + " tools=" + std::to_string(tools.size()) + ")");
+
+        auto body = build_request(msgs, tools, cfg);
+        body["stream"] = true;
+        auto path = request_path();
+        lg.trace("llm", "POST (stream) " + path);
+
+        sse::Parser         parser;
+        OpenAIStreamDecoder decoder;
+        StreamAccumulator   acc;
+        auto sink   = [&](const StreamEvent& e) { acc.push(e); on_event(e); };
+        auto on_sse = [&](sse::Event ev) { decoder(ev, sink); };
+
+        std::string raw;
+        auto receiver = [&](const char* data, std::size_t len) -> bool {
+            raw.append(data, len);
+            parser.feed(std::string_view(data, len), on_sse);
+            return true;
+        };
+
+        ensure_client();
+        auto res = client_->Post(path, httplib::Headers{}, body.dump(),
+                                 "application/json", receiver);
+        if (!res) {
+            auto err = "HTTP request failed: " + httplib::to_string(res.error());
+            lg.error("llm", err);
+            throw APIError(0, err);
+        }
+        if (res->status != 200) {
+            lg.error("llm", "openai API error (status="
+                + std::to_string(res->status) + "): " + raw);
+            throw APIError(res->status, "openai API error: " + raw);
+        }
+
+        parser.finish(on_sse);
+        auto response = acc.result();
+        decoder.restore_ids(response);
+        response.raw = raw;  // the concatenated SSE text (not a single JSON doc)
+
+        lg.debug("llm", "finish_reason=" + response.finish_reason
+            + " tool_calls=" + std::to_string(response.message.tool_calls.size()));
+        return response;
+    }
+
     // ── Runnable surface ────────────────────────────────────────────────────
 
     std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& cfg = {}) {
@@ -261,8 +385,11 @@ public:
         return out;
     }
 
-    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(prompt), cfg));
+    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& = {}) {
+        std::vector<Message> msgs = {Message::user(std::move(prompt))};
+        chat_stream(msgs, {}, [&](const StreamEvent& e) {
+            if (e.kind == StreamEvent::Kind::text_delta) cb(e.text);
+        });
     }
 
     static LLMModel from_config(std::string model, LLMConfig cfg) {
@@ -454,6 +581,7 @@ using OpenAIChat      = LLMModel<OpenAI, chat_tag>;
 using OpenAIEmbedding = LLMModel<OpenAI, embedding_tag>;
 
 static_assert(is_chat<OpenAIChat>,           "OpenAIChat must satisfy is_chat");
+static_assert(is_streaming_chat<OpenAIChat>, "OpenAIChat must satisfy is_streaming_chat");
 static_assert(is_embedding<OpenAIEmbedding>, "OpenAIEmbedding must satisfy is_embedding");
 
 } // namespace tiny_agent
