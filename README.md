@@ -1,4 +1,4 @@
-# tiny_agent
+# <img src="docs/assets/icon.svg" alt="tiny_agent logo" width="38" align="top"> tiny_agent
 
 [![CI](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

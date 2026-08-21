@@ -1,0 +1,11 @@
+<svg width="512" height="512" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="tiny_agent logo">
+  <rect x="0" y="0" width="180" height="180" rx="40" fill="#e8f1f9"/>
+  <g stroke="#00599C" stroke-width="7" stroke-linecap="round">
+    <line x1="52" y1="34" x2="52" y2="20"/><line x1="90" y1="30" x2="90" y2="16"/><line x1="128" y1="34" x2="128" y2="20"/>
+    <line x1="52" y1="146" x2="52" y2="160"/><line x1="90" y1="150" x2="90" y2="164"/><line x1="128" y1="146" x2="128" y2="160"/>
+  </g>
+  <rect x="34" y="38" width="112" height="104" rx="26" fill="#00599C"/>
+  <circle cx="68" cy="82" r="12" fill="#ffffff"/>
+  <circle cx="112" cy="82" r="12" fill="#ffffff"/>
+  <path d="M 66 112 Q 90 128 114 112" stroke="#ffffff" stroke-width="8" fill="none" stroke-linecap="round"/>
+</svg>
