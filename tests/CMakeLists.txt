@@ -22,6 +22,7 @@ set(UNIT_TESTS
     test_tracing
     test_vectorstore_remote
     test_context
+    test_readme_snippets
 )
 
 foreach(t ${UNIT_TESTS})

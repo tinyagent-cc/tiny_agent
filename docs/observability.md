@@ -56,7 +56,7 @@ emitted as the parent span:
 ```
 
 Without a `ScopedTrace`, each model call is its own single-span trace. That is
-still useful — timings, tokens, errors — but the tool-calling turns of one run
+still useful (timings, tokens, errors), but the tool-calling turns of one run
 are no longer visibly related.
 
 The context is `thread_local`, which matches the rule that an agent instance
@@ -88,7 +88,7 @@ attributes (`openinference.span.kind`, `llm.model_name`, `input.value`,
 `llm.token_count.*`).
 
 **Why not Phoenix's OTLP endpoint.** Phoenix's collector at `/v1/traces` accepts
-protobuf only — posting an OTLP/HTTP body with `Content-Type: application/json`
+protobuf only. Posting an OTLP/HTTP body with `Content-Type: application/json`
 returns `415 Unsupported content type: application/json`, verified against
 arize-phoenix on 2026-08-21. Encoding protobuf by hand to send a trace is not a
 trade tiny_agent will make, and Phoenix's own span API is JSON and lands spans
@@ -152,7 +152,7 @@ struct MyExporter final : obs::Exporter {
 auto tracer = std::make_shared<obs::Tracer>(std::make_shared<MyExporter>());
 ```
 
-Or skip the inheritance — anything with a matching `export_spans` satisfies the
+Or skip the inheritance. Anything with a matching `export_spans` satisfies the
 `obs::trace_exporter` concept and `obs::make_exporter()` wraps it.
 
 ## Failure behaviour
@@ -183,7 +183,7 @@ conversation contains anything that should not reach a third-party system:
 middleware::tracing({.tracer = tracer, .capture_content = false});
 ```
 
-Timings, model name, token counts, finish reason and errors still flow — only
+Timings, model name, token counts, finish reason and errors still flow. Only
 the message content is withheld. `max_content_chars` (8192 by default) caps what
 is sent when capture is on.
 
@@ -191,12 +191,12 @@ is sent when capture is on.
 
 `obs::Span` fields the middleware fills in from an `LLMResponse`:
 
-- `model` — read from the provider's echoed `model` in the raw response body
-- `input_tokens` / `output_tokens` / `total_tokens` — read from `usage`,
+- `model`, read from the provider's echoed `model` in the raw response body
+- `input_tokens` / `output_tokens` / `total_tokens`, read from `usage`,
   accepting OpenAI (`prompt_tokens`), Anthropic (`input_tokens`) and Gemini
   (`promptTokenCount`) naming. If the provider reports no total, it is summed
 - `finish_reason`, `status`, `status_message`
-- `input` / `output` — the serialized messages and completion, when capture is on
+- `input` / `output`, the serialized messages and completion, when capture is on
 
 Anything else goes in `attributes`, a plain string map passed through to the
 backend verbatim. Set them per-middleware:
@@ -208,8 +208,8 @@ middleware::tracing({.tracer = tracer,
 
 ## Example
 
-`examples/18_tracing.cpp` picks a backend from the environment — Langfuse if the
-key pair is set, Phoenix if `PHOENIX_BASE_URL` is, stderr otherwise — and runs a
+`examples/18_tracing.cpp` picks a backend from the environment: Langfuse if the
+key pair is set, Phoenix if `PHOENIX_BASE_URL` is, stderr otherwise. It runs a
 tool-calling agent inside a `ScopedTrace`.
 
 ```bash

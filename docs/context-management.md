@@ -51,7 +51,7 @@ ceiling. Compacting exactly to `max_tokens` means compacting again on the very
 next turn; going to 60% buys several turns per pass.
 
 `keep_recent` protects the tail. The model needs the recent turns verbatim to
-continue coherently, so no stage will touch them — which means a budget smaller
+continue coherently, so no stage will touch them, which means a budget smaller
 than the protected tail cannot be met. When that happens the middleware logs a
 warning naming the cause and passes the conversation through rather than
 destroying it:
@@ -65,7 +65,7 @@ destroying it:
 
 The default `approx_token_count` needs no tokenizer: roughly four characters per
 token, plus per-message overhead. It counts message text, multimodal parts, and
-**tool-call arguments** — counting text alone misses arguments entirely, so a
+**tool-call arguments**. Counting text alone misses arguments entirely, so a
 tool-heavy conversation, exactly the kind that overruns a window, reads as far
 smaller than it is.
 
@@ -81,7 +81,7 @@ For precision, supply a real tokenizer:
 ## Tool-call pairing
 
 Providers reject a `tool` message that does not follow the assistant message
-requesting it — OpenAI answers `messages with role 'tool' must be a response to
+requesting it. OpenAI answers `messages with role 'tool' must be a response to
 a preceding message with 'tool_calls'`. A cut that lands in the middle of a
 tool-call sequence produces a prompt the API refuses.
 
@@ -98,7 +98,7 @@ could leave a conversation beginning with a tool result.
 
 A summary stands in for every message already folded away, which makes it the
 densest thing in the prompt and the worst candidate for the next stage to drop.
-Stage 2 marks the message it creates, and stage 3 treats it as protected — so a
+Stage 2 marks the message it creates, and stage 3 treats it as protected, so a
 run that summarizes and then still has to trim keeps what it paid for.
 
 The marker also stops summaries from accumulating: a later pass folds the
@@ -152,7 +152,7 @@ from the ladder:
 
 Reach for one of these when you want exactly that technique on its own terms.
 Reach for `context_management()` when what you actually have is a token budget,
-which is the usual case — stacking all three means reasoning about three
+which is the usual case. Stacking all three means reasoning about three
 independent triggers that do not know about each other.
 
 ## Primitives

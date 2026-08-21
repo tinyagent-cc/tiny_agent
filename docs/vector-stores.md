@@ -34,11 +34,11 @@ get the batch path where it exists and a loop where it does not.
 
 | Store | Header | Needs |
 |---|---|---|
-| `FlatVectorStore` | `retriever.hpp` | nothing — brute-force cosine over a vector |
+| `FlatVectorStore` | `retriever.hpp` | nothing, brute-force cosine over a vector |
 | `HnswVectorStore` | `vectorstore/hnswlib.hpp` | hnswlib (`-DTINY_AGENT_HNSWLIB=ON`) |
 | `QdrantVectorStore` | `vectorstore/qdrant.hpp` | a running Qdrant |
 | `ChromaVectorStore` | `vectorstore/chroma.hpp` | a running Chroma |
-| `AnyVectorStore` | `retriever.hpp` | nothing — wraps any of the above |
+| `AnyVectorStore` | `retriever.hpp` | nothing, wraps any of the above |
 
 `FlatVectorStore` is an O(n) scan. It is the right choice up to a few thousand
 documents and it keeps the dependency count at zero.
@@ -104,7 +104,7 @@ ChromaVectorStore store{"http://localhost:8000", "my_docs",
 
 Chroma's v2 API keys every record path by the collection's **UUID**, so the
 first call resolves the name via `get_or_create` and caches the id. The one
-exception is deleting a collection, which takes the **name** — deleting by UUID
+exception is deleting a collection, which takes the **name**. Deleting by UUID
 answers 404, so a `clear()` written the obvious way looks like it worked and
 changes nothing. The adapter uses the name.
 
