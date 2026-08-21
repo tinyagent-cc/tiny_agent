@@ -1,0 +1,31 @@
+name: Feature request
+description: A provider, middleware, vector store, or other capability tiny_agent doesn't have yet.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What can't you do today
+      description: The concrete task this blocks, not just the feature name.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: >-
+        How this fits the library's model: a new concept implementation
+        (provider, middleware, vector store), a new header behind its own
+        `#include`, or something else. See CONTRIBUTING.md for the rules
+        (header-only, no unrequested dependency, concepts over virtual
+        dispatch) — say how your proposal fits them, or what it needs to
+        break and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you're doing instead
+      description: Current workaround, or the closest existing feature.

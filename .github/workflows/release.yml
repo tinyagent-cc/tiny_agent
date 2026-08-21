@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+permissions:
+  contents: write
+
+jobs:
+  # Same matrix as ci.yml. A tag only ships once it builds and passes on all four.
+  build-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64,   os: ubuntu-24.04 }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+          - { name: macos-arm64, os: macos-14 }
+          - { name: windows-x64, os: windows-2022 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: lukka/get-cmake@latest
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "809d4e072ea48e74bc0c5e6c1227a5cc636a63ad"
+
+      - name: Export GitHub Actions cache env for vcpkg
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Configure
+        run: cmake --preset default
+
+      - name: Build
+        run: cmake --build --preset default
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Debug
+
+  release:
+    name: Publish GitHub release
+    needs: build-test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build the source tarball
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          git archive --format=tar.gz --prefix="tiny_agent-${tag#v}/" \
+            -o "tiny_agent-${tag#v}.tar.gz" "$tag"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "tiny_agent-${GITHUB_REF_NAME#v}.tar.gz"
+
+  update-vcpkg-port:
+    name: Update ports/tiny-agent SHA512
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # vcpkg_from_github fetches this exact URL for the tag. Hashing anything
+      # else (our own tarball above, a local `git archive`) would not match
+      # what vcpkg downloads, since GitHub's archive endpoint does not
+      # byte-for-byte match `git archive`.
+      - name: Compute the SHA512 vcpkg will fetch
+        id: sha
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
+          curl -sL --fail "$url" -o /tmp/vcpkg-src.tar.gz
+          sha="$(sha512sum /tmp/vcpkg-src.tar.gz | cut -d' ' -f1)"
+          {
+            echo "sha512=$sha"
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch the port
+        run: |
+          sed -i "s/^    REF .*/    REF ${{ steps.sha.outputs.tag }}/" ports/tiny-agent/portfile.cmake
+          sed -i "s/^    SHA512 .*/    SHA512 ${{ steps.sha.outputs.sha512 }}/" ports/tiny-agent/portfile.cmake
+          sed -i "s/\"version\": \".*\"/\"version\": \"${{ steps.sha.outputs.version }}\"/" ports/tiny-agent/vcpkg.json
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ports/tiny-agent/portfile.cmake ports/tiny-agent/vcpkg.json
+          if git diff --cached --quiet; then
+            echo "port already up to date"
+            exit 0
+          fi
+          git commit -m "chore: point ports/tiny-agent at ${{ steps.sha.outputs.tag }}"
+          git push origin HEAD:main
