@@ -20,6 +20,7 @@ set(UNIT_TESTS
     test_memory
     test_hardening
     test_tracing
+    test_vectorstore_remote
 )
 
 foreach(t ${UNIT_TESTS})

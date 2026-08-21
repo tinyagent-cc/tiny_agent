@@ -16,6 +16,7 @@ set(EXAMPLES
     16_deep_agent_custom
     17_streaming
     18_tracing
+    19_vector_store
 )
 
 # The MCP stdio transport is POSIX-only (transport.hpp guards it out on _WIN32,
