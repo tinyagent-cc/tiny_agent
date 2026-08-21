@@ -182,14 +182,18 @@ private:
         Message m;
         m.role = Role::assistant;
         std::string text;
+        if (!j.contains("content") || !j["content"].is_array())
+            throw APIError(200, "anthropic response has no content blocks: "
+                + j.dump().substr(0, 512));
         for (auto& block : j["content"]) {
-            if (block["type"] == "text")
-                text += block["text"].get<std::string>();
-            else if (block["type"] == "tool_use")
+            auto type = block.value("type", std::string{});
+            if (type == "text")
+                text += block.value("text", std::string{});
+            else if (type == "tool_use")
                 m.tool_calls.push_back({
-                    block["id"].get<std::string>(),
-                    block["name"].get<std::string>(),
-                    block["input"]
+                    block.value("id", std::string{}),
+                    block.value("name", std::string{}),
+                    block.value("input", json::object())
                 });
         }
         m.content = std::move(text);
@@ -265,7 +269,9 @@ public:
         self.extra = extra;
         self.log = log;
 
-        auto cfg = overrides.api_key.empty() ? self : LLMConfig::merge(self, overrides);
+        // Always merge: a per-call override of temperature or max_tokens has to
+        // land even when the caller did not also hand over an api_key.
+        auto cfg = LLMConfig::merge(self, overrides);
         lg.debug("llm", "anthropic chat (model=" + model
             + " messages=" + std::to_string(msgs.size())
             + " tools=" + std::to_string(tools.size()) + ")");

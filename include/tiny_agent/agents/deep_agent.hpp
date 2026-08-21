@@ -5,25 +5,39 @@
 
 namespace tiny_agent::agents {
 
+// DeepAgent — the ReAct loop: call the model, dispatch the tools it asked for,
+// feed the results back, repeat until it stops asking.
+//
+// Threading: one agent instance is single-threaded. run/chat/stream mutate the
+// message vector and, for chat(), the retained history; two threads sharing one
+// agent race. Give each thread its own agent. Sub-agents built with as_tool()
+// are shared, so the same rule applies to them: a parallel tool dispatcher would
+// need one sub-agent per worker.
+//
+// as_tool() requires the agent to be owned by a shared_ptr — build it with
+// make_shared_agent() or create_agent<...>::create_shared(). Calling it on a
+// stack-allocated agent throws Error rather than std::bad_weak_ptr.
 template<is_chat LLMType>
 class DeepAgent : public std::enable_shared_from_this<DeepAgent<LLMType>> {
     LLMType     llm_;
     AgentConfig cfg_;
-    Log&        log_;
     ToolRegistry    registry_;
     MiddlewareChain chain_;
     std::vector<Message> history_;
 
+    Log&       log_()       { return cfg_.logger; }
+    const Log& log_() const { return cfg_.logger; }
+
     LLMResponse call_llm(std::vector<Message>& msgs, const LLMConfig& overrides = {}) {
         auto schemas = registry_.schemas();
-        log_.trace(cfg_.name, "sending " + std::to_string(msgs.size())
+        log_().trace(cfg_.name, "sending " + std::to_string(msgs.size())
             + " messages with " + std::to_string(schemas.size()) + " tool schemas");
         auto effective = LLMConfig::merge(cfg_.llm_config, overrides);
         auto terminal = [this, &schemas](std::vector<Message>& m) -> LLMResponse {
             return llm_.chat(m, schemas);
         };
         if (chain_.empty()) return terminal(msgs);
-        log_.trace(cfg_.name, "running through middleware chain");
+        log_().trace(cfg_.name, "running through middleware chain");
         return chain_.run(msgs, terminal);
     }
 
@@ -33,7 +47,7 @@ class DeepAgent : public std::enable_shared_from_this<DeepAgent<LLMType>> {
     // Middleware still wraps the call in both cases.
     LLMResponse call_llm_stream(std::vector<Message>& msgs, const StreamHandler& on_event) {
         auto schemas = registry_.schemas();
-        log_.trace(cfg_.name, "streaming " + std::to_string(msgs.size())
+        log_().trace(cfg_.name, "streaming " + std::to_string(msgs.size())
             + " messages with " + std::to_string(schemas.size()) + " tool schemas");
         auto terminal = [this, &schemas, &on_event](std::vector<Message>& m) -> LLMResponse {
             if constexpr (is_streaming_chat<LLMType>) {
@@ -53,30 +67,39 @@ class DeepAgent : public std::enable_shared_from_this<DeepAgent<LLMType>> {
             }
         };
         if (chain_.empty()) return terminal(msgs);
-        log_.trace(cfg_.name, "running through middleware chain");
+        log_().trace(cfg_.name, "running through middleware chain");
         return chain_.run(msgs, terminal);
+    }
+
+    Message tool_failure(const ToolCall& tc, const std::string& what) {
+        log_().error(cfg_.name, "tool error [" + tc.name + "]: " + what);
+        json err;
+        err["error"] = what;
+        auto msg = Message::tool_result(tc.id, err.dump());
+        msg.name = tc.name;
+        return msg;
     }
 
     std::vector<Message> execute_tools(const std::vector<ToolCall>& calls) {
         std::vector<Message> results;
         for (auto& tc : calls) {
-            log_.info(cfg_.name, "calling tool: " + tc.name);
-            log_.trace(cfg_.name, "tool args [" + tc.name + "]: " + tc.arguments.dump());
+            log_().info(cfg_.name, "calling tool: " + tc.name);
+            log_().trace(cfg_.name, "tool args [" + tc.name + "]: " + tc.arguments.dump());
             try {
                 auto result = registry_.execute(tc.name, tc.arguments);
                 std::string body = result.is_string()
                     ? result.template get<std::string>() : result.dump();
-                log_.trace(cfg_.name, "tool result [" + tc.name + "]: " + body);
+                log_().trace(cfg_.name, "tool result [" + tc.name + "]: " + body);
                 auto msg = Message::tool_result(tc.id, std::move(body));
                 msg.name = tc.name;
                 results.push_back(std::move(msg));
             } catch (const std::exception& e) {
-                log_.error(cfg_.name, std::string("tool error [") + tc.name + "]: " + e.what());
-                json err;
-                err["error"] = e.what();
-                auto msg = Message::tool_result(tc.id, err.dump());
-                msg.name = tc.name;
-                results.push_back(std::move(msg));
+                results.push_back(tool_failure(tc, e.what()));
+            } catch (...) {
+                // A tool handler is user code and may throw anything. One bad
+                // tool must not take down the whole agent loop: turn it into a
+                // tool_result the model can read and recover from.
+                results.push_back(tool_failure(tc, "unknown non-standard exception"));
             }
         }
         return results;
@@ -87,38 +110,49 @@ public:
     using output_t = std::string;
 
     DeepAgent(LLMType llm, AgentConfig cfg = {})
-        : llm_(std::move(llm)), cfg_(std::move(cfg)), log_(cfg_.logger)
+        : llm_(std::move(llm)), cfg_(std::move(cfg))
     {
-        log_.debug(cfg_.name, "initializing (max_iterations=" + std::to_string(cfg_.max_iterations)
+        if (cfg_.max_iterations <= 0)
+            throw Error("AgentConfig::max_iterations must be positive (got "
+                + std::to_string(cfg_.max_iterations) + ")");
+
+        log_().debug(cfg_.name, "initializing (max_iterations=" + std::to_string(cfg_.max_iterations)
             + " tools=" + std::to_string(cfg_.tools.size())
             + " middlewares=" + std::to_string(cfg_.middlewares.size()) + ")");
         for (auto& t : cfg_.tools) {
-            log_.trace(cfg_.name, "registering tool: " + t.schema.name);
+            log_().trace(cfg_.name, "registering tool: " + t.schema.name);
+            if (registry_.has(t.schema.name))
+                log_().warn(cfg_.name, "duplicate tool name '" + t.schema.name
+                    + "'; the later registration wins");
             registry_.add(t);
         }
-        for (auto& m : cfg_.middlewares) chain_.add(m);
+        for (auto& m : cfg_.middlewares) {
+            if (!m)
+                throw Error("AgentConfig::middlewares contains an empty MiddlewareFn");
+            chain_.add(m);
+        }
     }
 
     std::string execute_loop(std::vector<Message>& msgs, const LLMConfig& overrides,
                              const char* label = "run") {
         for (int i = 0; i < cfg_.max_iterations; ++i) {
-            log_.debug(cfg_.name, std::string(label) + " iteration " + std::to_string(i + 1)
+            log_().debug(cfg_.name, std::string(label) + " iteration " + std::to_string(i + 1)
                 + "/" + std::to_string(cfg_.max_iterations)
                 + " (messages=" + std::to_string(msgs.size()) + ")");
             auto resp = call_llm(msgs, overrides);
             msgs.push_back(resp.message);
 
             if (!resp.message.has_tool_calls()) {
-                log_.debug(cfg_.name, "done: " + resp.finish_reason);
+                log_().debug(cfg_.name, "done: " + resp.finish_reason);
                 return resp.message.text();
             }
 
-            log_.debug(cfg_.name, "LLM requested " + std::to_string(resp.message.tool_calls.size()) + " tool call(s)");
+            log_().debug(cfg_.name, "LLM requested " + std::to_string(resp.message.tool_calls.size()) + " tool call(s)");
             auto tool_results = execute_tools(resp.message.tool_calls);
             for (auto& tr : tool_results)
                 msgs.push_back(std::move(tr));
         }
-        log_.warn(cfg_.name, "reached max iterations (" + std::to_string(cfg_.max_iterations) + ")");
+        log_().warn(cfg_.name, "reached max iterations (" + std::to_string(cfg_.max_iterations) + ")");
         return "Error: agent reached maximum iterations ("
             + std::to_string(cfg_.max_iterations) + ")";
     }
@@ -133,23 +167,23 @@ public:
                                     const StreamHandler& on_event,
                                     const char* label = "run_stream") {
         for (int i = 0; i < cfg_.max_iterations; ++i) {
-            log_.debug(cfg_.name, std::string(label) + " iteration " + std::to_string(i + 1)
+            log_().debug(cfg_.name, std::string(label) + " iteration " + std::to_string(i + 1)
                 + "/" + std::to_string(cfg_.max_iterations)
                 + " (messages=" + std::to_string(msgs.size()) + ")");
             auto resp = call_llm_stream(msgs, on_event);
             msgs.push_back(resp.message);
 
             if (!resp.message.has_tool_calls()) {
-                log_.debug(cfg_.name, "done: " + resp.finish_reason);
+                log_().debug(cfg_.name, "done: " + resp.finish_reason);
                 return resp.message.text();
             }
 
-            log_.debug(cfg_.name, "LLM requested " + std::to_string(resp.message.tool_calls.size()) + " tool call(s)");
+            log_().debug(cfg_.name, "LLM requested " + std::to_string(resp.message.tool_calls.size()) + " tool call(s)");
             auto tool_results = execute_tools(resp.message.tool_calls);
             for (auto& tr : tool_results)
                 msgs.push_back(std::move(tr));
         }
-        log_.warn(cfg_.name, std::string(label) + " reached max iterations ("
+        log_().warn(cfg_.name, std::string(label) + " reached max iterations ("
             + std::to_string(cfg_.max_iterations) + ")");
         return "Error: agent reached maximum iterations ("
             + std::to_string(cfg_.max_iterations) + ")";
@@ -160,7 +194,7 @@ public:
     }
 
     std::string invoke(const std::string& input, const RunConfig&, const LLMConfig& overrides = {}) {
-        log_.debug(cfg_.name, "invoke(\"" + input.substr(0, 120)
+        log_().debug(cfg_.name, "invoke(\"" + input.substr(0, 120)
             + (input.size() > 120 ? "..." : "") + "\")");
         std::vector<Message> msgs;
         if (!cfg_.system_prompt.empty())
@@ -174,7 +208,7 @@ public:
     // Runs the full ReAct loop, streaming every model turn's deltas to
     // on_event, and returns the final text (identical to invoke()).
     std::string run_stream(const std::string& input, const StreamHandler& on_event) {
-        log_.debug(cfg_.name, "run_stream(\"" + input.substr(0, 120)
+        log_().debug(cfg_.name, "run_stream(\"" + input.substr(0, 120)
             + (input.size() > 120 ? "..." : "") + "\")");
         std::vector<Message> msgs;
         if (!cfg_.system_prompt.empty())
@@ -184,7 +218,7 @@ public:
     }
 
     std::string chat(const std::string& input, const LLMConfig& overrides = {}) {
-        log_.debug(cfg_.name, "chat(\"" + input.substr(0, 120)
+        log_().debug(cfg_.name, "chat(\"" + input.substr(0, 120)
             + (input.size() > 120 ? "..." : "") + "\")");
         if (history_.empty() && !cfg_.system_prompt.empty())
             history_.push_back(Message::system(cfg_.system_prompt));
@@ -194,7 +228,7 @@ public:
 
     // ── Streaming multi-turn chat ─────────────────────────────────────────
     std::string chat_stream(const std::string& input, const StreamHandler& on_event) {
-        log_.debug(cfg_.name, "chat_stream(\"" + input.substr(0, 120)
+        log_().debug(cfg_.name, "chat_stream(\"" + input.substr(0, 120)
             + (input.size() > 120 ? "..." : "") + "\")");
         if (history_.empty() && !cfg_.system_prompt.empty())
             history_.push_back(Message::system(cfg_.system_prompt));
@@ -217,7 +251,13 @@ public:
     }
 
     void add_tool(DynamicTool t) {
-        log_.debug(cfg_.name, "adding tool: " + t.schema.name);
+        log_().debug(cfg_.name, "adding tool: " + t.schema.name);
+        if (t.schema.name.empty())
+            throw ToolError("cannot register a tool with an empty name");
+        if (!t.fn)
+            throw ToolError("tool '" + t.schema.name + "' has no handler");
+        if (registry_.has(t.schema.name))
+            log_().warn(cfg_.name, "replacing existing tool '" + t.schema.name + "'");
         cfg_.tools.push_back(t);
         registry_.add(std::move(t));
     }
@@ -232,6 +272,14 @@ public:
                       {"properties", {{"input", {{"type", "string"},
                                                   {"description", "The task to delegate"}}}}},
                       {"required", {"input"}}};
+        // as_tool hands the sub-agent's lifetime to whoever holds the returned
+        // tool, so the agent has to be shared-owned. Without this check a
+        // stack-allocated agent throws std::bad_weak_ptr from deep inside the
+        // standard library, which says nothing about how to fix it.
+        if (this->weak_from_this().expired())
+            throw Error("DeepAgent::as_tool() requires a shared_ptr-owned agent; "
+                        "build it with make_shared_agent() or "
+                        "create_agent<deep_agent_tag>::create_shared()");
         auto self = this->shared_from_this();
         return DynamicTool::create(
             std::move(name), std::move(description),
@@ -262,8 +310,8 @@ public:
     const AgentConfig& agent_config() const { return cfg_; }
     LLMType& llm() { return llm_; }
     const LLMType& llm() const { return llm_; }
-    Log& log() { return log_; }
-    const Log& log() const { return log_; }
+    Log& log() { return log_(); }
+    const Log& log() const { return log_(); }
     std::size_t tool_count() const { return registry_.size(); }
     std::vector<ToolSchema> tool_schemas() const { return registry_.schemas(); }
 };

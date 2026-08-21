@@ -1,62 +1,117 @@
 #pragma once
+// ═══════════════════════════════════════════════════════════════════════════════
+//  vectorstore/qdrant.hpp  —  Qdrant over its REST API
+//
+//  Needs a running Qdrant and nothing else: no client library, just the httplib
+//  already in the build.
+//
+//    auto store = QdrantVectorStore{"http://localhost:6333", "my_docs",
+//                                   QdrantConfig{.api_key = "…"}};
+//    store.add("doc_1", "content", embedding, metadata);
+//    auto hits = store.search(query_vec, 5);
+//
+//  Point ids: Qdrant accepts only an unsigned integer or a UUID, and rejects
+//  anything else with 400 ("value doc_0 is not a valid point ID"). Since every
+//  other store here takes a free-form string id, this adapter hashes the id into
+//  a UUID for the wire and keeps the original in the payload, so search() gives
+//  back the id you stored.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #include "base.hpp"
 #include "../core/log.hpp"
 #include <httplib.h>
+#include <cstdint>
 
 namespace tiny_agent {
 
-// ── QdrantConfig ─────────────────────────────────────────────────────────────
-
 struct QdrantConfig {
     std::string api_key;
+    std::string distance = "Cosine";   // Cosine | Euclid | Dot | Manhattan
     int         timeout_seconds = 30;
     Log         log;
 };
 
-// ── QdrantVectorStore — HTTP client to a Qdrant server ───────────────────────
-//
-// Uses Qdrant's REST API for persistent, scalable vector search.
-// Requires a running Qdrant instance.  No new C++ dependencies beyond httplib
-// (already part of tiny_agent).
-//
-//   auto store = QdrantVectorStore{"http://localhost:6333", "my_docs",
-//       QdrantConfig{.api_key = "..."}};
-//   store.add("id1", "content", embedding, metadata);
-//   auto results = store.search(query_vec, 5);
+namespace detail {
+
+// Deterministic 128-bit digest of a string, rendered in UUID form. Not a real
+// RFC 4122 v5 (no SHA-1, no namespace), but Qdrant only requires a parseable
+// UUID, and the same input always yields the same point id so re-adding a
+// document updates it rather than duplicating it.
+inline std::string uuid_from_string(const std::string& s) {
+    std::uint64_t h1 = 0xcbf29ce484222325ULL;
+    std::uint64_t h2 = 0x9e3779b97f4a7c15ULL;
+    for (unsigned char c : s) {
+        h1 = (h1 ^ c) * 0x100000001b3ULL;
+        h2 = (h2 + c) * 0xff51afd7ed558ccdULL;
+        h2 ^= h2 >> 33;
+    }
+    if (h1 == 0) h1 = 0x1ULL;   // never emit the nil UUID
+
+    auto hex = [](std::uint64_t v, int digits) {
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::string out(static_cast<std::size_t>(digits), '0');
+        for (int i = digits - 1; i >= 0; --i) { out[static_cast<std::size_t>(i)] = kHex[v & 0xF]; v >>= 4; }
+        return out;
+    };
+
+    auto a = hex(h1, 16);   // 8-4-4 comes out of the first half
+    auto b = hex(h2, 16);   // 4-12 out of the second
+    // Version 4 and the RFC variant bits, so the value parses as a normal UUID.
+    return a.substr(0, 8) + "-" + a.substr(8, 4) + "-4" + a.substr(13, 3)
+         + "-a" + b.substr(1, 3) + "-" + b.substr(4, 12);
+}
+
+} // namespace detail
 
 class QdrantVectorStore {
     std::string      base_url_;
     std::string      collection_;
     QdrantConfig     config_;
-    httplib::Client  client_;
+    // mutable so search() and size() stay const for callers: issuing a request
+    // does not change what the store logically holds.
+    mutable httplib::Client client_;
     bool             collection_ensured_ = false;
     int              dimensions_         = 0;
-    size_t           size_               = 0;
+
+    [[nodiscard]] std::string collection_path() const {
+        return "/collections/" + collection_;
+    }
+
+    static json parse_or_throw(const std::string& body, const char* what) {
+        try {
+            return json::parse(body);
+        } catch (const std::exception& e) {
+            throw Error(std::string("QdrantVectorStore::") + what
+                + ": server returned invalid JSON: " + e.what());
+        }
+    }
 
     void ensure_collection(int dims) {
         if (collection_ensured_) return;
         dimensions_ = dims;
 
-        auto path = "/collections/" + collection_;
-        auto res = client_.Get(path);
+        auto res = client_.Get(collection_path());
         if (res && res->status == 200) {
             collection_ensured_ = true;
-            auto body = json::parse(res->body);
-            if (body.contains("result") && body["result"].contains("points_count"))
-                size_ = body["result"]["points_count"].get<size_t>();
             return;
         }
 
         config_.log.info("qdrant", "creating collection '" + collection_
-            + "' (dims=" + std::to_string(dims) + ")");
+            + "' (dims=" + std::to_string(dims) + " distance=" + config_.distance + ")");
 
         json body;
-        body["vectors"] = {{"size", dims}, {"distance", "Cosine"}};
-        auto create_res = client_.Put(path, body.dump(), "application/json");
-        if (!create_res || (create_res->status != 200 && create_res->status != 409))
+        body["vectors"] = {{"size", dims}, {"distance", config_.distance}};
+        auto create = client_.Put(collection_path(), body.dump(), "application/json");
+        if (!create)
+            throw Error("QdrantVectorStore: cannot reach " + base_url_ + ": "
+                + httplib::to_string(create.error()));
+        // A concurrent writer may have created it between the GET and the PUT;
+        // that is a success, not a failure.
+        if (create->status != 200 && create->status != 409
+            && create->body.find("already exists") == std::string::npos)
             throw Error("QdrantVectorStore: failed to create collection '"
-                + collection_ + "': "
-                + (create_res ? create_res->body : "connection failed"));
+                + collection_ + "' (status " + std::to_string(create->status)
+                + "): " + create->body.substr(0, 512));
         collection_ensured_ = true;
     }
 
@@ -68,7 +123,10 @@ public:
         , config_(std::move(cfg))
         , client_(base_url_)
     {
+        if (collection_.empty())
+            throw Error("QdrantVectorStore: collection name must not be empty");
         client_.set_read_timeout(config_.timeout_seconds);
+        client_.set_write_timeout(config_.timeout_seconds);
         if (!config_.api_key.empty())
             client_.set_default_headers({{"api-key", config_.api_key}});
 #ifdef __APPLE__
@@ -76,66 +134,121 @@ public:
 #endif
     }
 
+    // Pure: documents in, upsert body out. Lets a test check the wire format
+    // without a server.
+    static json build_upsert_body(const std::vector<Document>& docs) {
+        json points = json::array();
+        for (const auto& d : docs) {
+            json p;
+            p["id"]     = detail::uuid_from_string(d.id);
+            p["vector"] = d.embedding;
+            p["payload"] = {{"content", d.content},
+                            {"metadata", d.metadata.is_null() ? json::object() : d.metadata},
+                            {"tiny_agent_id", d.id}};
+            points.push_back(std::move(p));
+        }
+        return {{"points", std::move(points)}};
+    }
+
+    static std::vector<SearchResult> parse_query_response(const json& parsed) {
+        // /points/query nests hits under result.points; /points/search puts them
+        // straight under result. Read either.
+        const json* hits = nullptr;
+        if (parsed.contains("result")) {
+            const auto& r = parsed["result"];
+            if (r.is_object() && r.contains("points")) hits = &r["points"];
+            else if (r.is_array())                     hits = &r;
+        }
+        if (!hits)
+            throw Error("QdrantVectorStore::search: unexpected response shape: "
+                + parsed.dump().substr(0, 512));
+
+        std::vector<SearchResult> out;
+        out.reserve(hits->size());
+        for (const auto& hit : *hits) {
+            auto payload = hit.value("payload", json::object());
+            // Prefer the id we stored; fall back to whatever Qdrant echoes.
+            std::string id = payload.value("tiny_agent_id", std::string{});
+            if (id.empty()) {
+                const auto& raw = hit["id"];
+                id = raw.is_string() ? raw.get<std::string>() : raw.dump();
+            }
+            out.push_back({std::move(id),
+                           payload.value("content", std::string{}),
+                           hit.value("score", 0.0f),
+                           payload.value("metadata", json::object())});
+        }
+        return out;
+    }
+
     void add(const std::string& id, const std::string& content,
              const std::vector<float>& embedding, const json& metadata) {
-        ensure_collection(static_cast<int>(embedding.size()));
+        add_batch({{id, content, embedding, metadata}});
+    }
 
-        json point;
-        point["id"]      = id;
-        point["vector"]  = embedding;
-        point["payload"] = {{"content", content}, {"metadata", metadata}};
+    void add_batch(const std::vector<Document>& docs) {
+        if (docs.empty()) return;
+        ensure_collection(static_cast<int>(docs.front().embedding.size()));
 
-        json body;
-        body["points"] = json::array({point});
-
-        auto path = "/collections/" + collection_ + "/points?wait=true";
-        auto res = client_.Put(path, body.dump(), "application/json");
-        if (!res || res->status != 200)
+        auto body = build_upsert_body(docs);
+        // wait=true so a search issued right after this call sees the points.
+        auto res = client_.Put(collection_path() + "/points?wait=true",
+                               body.dump(), "application/json");
+        if (!res)
             throw Error("QdrantVectorStore::add failed: "
-                + (res ? res->body : "connection failed"));
-        ++size_;
+                + httplib::to_string(res.error()));
+        if (res->status != 200)
+            throw Error("QdrantVectorStore::add rejected (status "
+                + std::to_string(res->status) + "): " + res->body.substr(0, 512));
+        config_.log.debug("qdrant", "upserted " + std::to_string(docs.size()) + " point(s)");
     }
 
     [[nodiscard]] std::vector<SearchResult>
     search(const std::vector<float>& query, int top_k = 4) const {
         json body;
-        body["vector"]      = query;
-        body["limit"]       = top_k;
+        body["query"]        = query;    // /points/query takes "query", not "vector"
+        body["limit"]        = top_k;
         body["with_payload"] = true;
 
-        auto path = "/collections/" + collection_ + "/points/search";
-        auto res = client_.Post(path, body.dump(), "application/json");
-        if (!res || res->status != 200)
+        auto res = client_.Post(collection_path() + "/points/query",
+                                body.dump(), "application/json");
+        if (!res)
             throw Error("QdrantVectorStore::search failed: "
-                + (res ? res->body : "connection failed"));
+                + httplib::to_string(res.error()));
+        if (res->status != 200)
+            throw Error("QdrantVectorStore::search rejected (status "
+                + std::to_string(res->status) + "): " + res->body.substr(0, 512));
 
-        auto parsed = json::parse(res->body);
-        std::vector<SearchResult> results;
-        for (auto& hit : parsed["result"]) {
-            auto& payload = hit["payload"];
-            results.push_back({
-                hit["id"].get<std::string>(),
-                payload.value("content", std::string{}),
-                hit["score"].get<float>(),
-                payload.value("metadata", json::object())
-            });
-        }
-        return results;
+        return parse_query_response(parse_or_throw(res->body, "search"));
     }
 
-    [[nodiscard]] size_t size() const { return size_; }
+    // Counted server-side rather than tracked locally, so a store another
+    // process also writes to reports the truth.
+    [[nodiscard]] std::size_t size() const {
+        auto res = client_.Post(collection_path() + "/points/count",
+                                json{{"exact", true}}.dump(), "application/json");
+        if (!res || res->status != 200) return 0;   // absent collection counts as empty
+        auto parsed = parse_or_throw(res->body, "size");
+        if (!parsed.contains("result")) return 0;
+        return parsed["result"].value("count", std::size_t{0});
+    }
 
     void clear() {
-        json body;
-        body["vectors"] = {{"size", dimensions_}, {"distance", "Cosine"}};
-
-        auto path = "/collections/" + collection_;
-        client_.Delete(path);
-        client_.Put(path, body.dump(), "application/json");
-        size_ = 0;
+        auto res = client_.Delete(collection_path());
+        if (!res)
+            throw Error("QdrantVectorStore::clear failed: "
+                + httplib::to_string(res.error()));
+        // A 404 means it was already gone, which is the state clear() wanted.
+        if (res->status != 200 && res->status != 404)
+            throw Error("QdrantVectorStore::clear rejected (status "
+                + std::to_string(res->status) + "): " + res->body.substr(0, 512));
+        collection_ensured_ = false;
     }
+
+    [[nodiscard]] const std::string& collection() const { return collection_; }
 };
 
 static_assert(vector_store<QdrantVectorStore>);
+static_assert(batch_vector_store<QdrantVectorStore>);
 
 } // namespace tiny_agent

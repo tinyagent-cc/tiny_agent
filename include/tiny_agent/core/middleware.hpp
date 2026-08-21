@@ -10,12 +10,29 @@ using Next = std::function<LLMResponse(std::vector<Message>&)>;
 using MiddlewareFn = std::function<LLMResponse(
     std::vector<Message>&, Next)>;
 
+// MiddlewareChain — the runtime chain. Each middleware receives the mutable
+// message vector and a Next it must call to reach the model.
+//
+// A middleware may: inspect messages, rewrite them in place, short-circuit by
+// returning its own LLMResponse without calling next, or call next more than
+// once (retry). Anything it throws propagates to the caller with the message
+// vector left in whatever state it had reached — a middleware that needs the
+// original messages back on failure has to save and restore them itself.
+//
+// Threading: build the chain, then run it. run() holds pointers into the
+// internal vector for the duration of the call, so calling add() from another
+// thread while run() is in flight is a use-after-free. The chain is safe to run
+// concurrently as long as nothing mutates it.
 class MiddlewareChain {
     std::vector<MiddlewareFn> stack_;
 public:
-    void add(MiddlewareFn fn) { stack_.push_back(std::move(fn)); }
+    void add(MiddlewareFn fn) {
+        if (!fn) throw Error("MiddlewareChain::add: empty MiddlewareFn");
+        stack_.push_back(std::move(fn));
+    }
 
     LLMResponse run(std::vector<Message>& msgs, Next terminal) const {
+        if (!terminal) throw Error("MiddlewareChain::run: empty terminal");
         Next chain = std::move(terminal);
         for (auto it = stack_.rbegin(); it != stack_.rend(); ++it) {
             auto& mw = *it;
@@ -26,6 +43,7 @@ public:
         return chain(msgs);
     }
 
+    void clear() { stack_.clear(); }
     bool empty() const { return stack_.empty(); }
     std::size_t size() const { return stack_.size(); }
 };

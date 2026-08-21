@@ -50,4 +50,5 @@
 //
 // Optional vector stores (require additional dependencies):
 // #include "vectorstore/hnswlib.hpp"   // needs hnswlib
-// #include "vectorstore/qdrant.hpp"    // needs running Qdrant server
+// #include "vectorstore/qdrant.hpp"    // needs a running Qdrant server
+// #include "vectorstore/chroma.hpp"    // needs a running Chroma server

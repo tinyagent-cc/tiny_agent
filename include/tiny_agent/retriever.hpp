@@ -1,4 +1,25 @@
 #pragma once
+// ═══════════════════════════════════════════════════════════════════════════════
+//  retriever.hpp  —  the retrieval entry point
+//
+//  Including this gives you the whole vector-store interface:
+//
+//    vector_store        the concept — add, search, size, clear. Four methods,
+//                        and anything satisfying them plugs in
+//    Document            id, content, embedding, metadata
+//    SearchResult        id, content, score (higher is closer), metadata
+//    FlatVectorStore     in-process brute force, no dependencies
+//    AnyVectorStore      the same interface with the backend chosen at runtime
+//    Retriever           an embeddings model plus a store, exposable as a tool
+//
+//  Server-backed stores are separate opt-in headers, since each one is a
+//  running service you have to have:
+//
+//    #include <tiny_agent/vectorstore/qdrant.hpp>    // Qdrant over REST
+//    #include <tiny_agent/vectorstore/chroma.hpp>    // Chroma over REST
+//    #include <tiny_agent/vectorstore/hnswlib.hpp>   // in-process ANN, needs hnswlib
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #include "core/model.hpp"
 #include "vectorstore/base.hpp"
 #include "vectorstore/flat.hpp"
@@ -13,6 +34,7 @@ class Retriever {
     EmbeddingType  embeddings_;
     int            default_top_k_;
     Log            log_;
+    std::size_t    next_id_ = 0;
 
 public:
     Retriever(EmbeddingType embeddings, int top_k = 4, Log log = {})
@@ -29,12 +51,21 @@ public:
 
     void add_documents(const std::vector<std::string>& texts,
                        const std::vector<json>& metadata = {}) {
+        if (texts.empty()) return;
         log_.info("retriever",
             "adding " + std::to_string(texts.size()) + " documents");
         auto vecs = embeddings_.embed_documents(texts);
+        if (vecs.size() != texts.size())
+            throw Error("Retriever::add_documents: embeddings model returned "
+                + std::to_string(vecs.size()) + " vectors for "
+                + std::to_string(texts.size()) + " documents");
+
         for (size_t i = 0; i < texts.size(); ++i) {
             json meta = (i < metadata.size()) ? metadata[i] : json::object();
-            std::string id = "doc_" + std::to_string(store_.size());
+            // Own counter, not store_.size(): a store that dedupes, deletes, or
+            // reports an approximate count would otherwise hand out ids that
+            // collide with documents already in it.
+            std::string id = "doc_" + std::to_string(next_id_++);
             store_.add(id, texts[i], vecs[i], meta);
         }
         log_.debug("retriever",
@@ -53,6 +84,9 @@ public:
     StoreType&       store()       { return store_; }
     const StoreType& store() const { return store_; }
 
+    // The returned tool borrows this Retriever — it must outlive the tool, and
+    // the Retriever must not be moved afterwards. For a tool that owns its
+    // retriever instead, use the free retriever_as_tool() with a shared_ptr.
     DynamicTool as_tool(std::string name, std::string description) {
         auto self = this;
         auto default_k = default_top_k_;
