@@ -5,21 +5,141 @@
 
 **The header-only C++20 agent framework: multi-provider, MCP built in, MIT licensed, and small enough to run your agent on a Raspberry Pi.**
 
-Agent inference in C++ is a solved problem (llama.cpp, Ollama). Agent *orchestration* in C++ is not: the loop, the tools, the memory, the delegation. `tiny_agent` is that layer, in a few thousand lines of headers with no virtual dispatch, built on C++20 concepts and `std::variant`. Point it at a frontier API or at a llama.cpp server on localhost; the agent code is identical.
+Inference in C++ is solved. llama.cpp and Ollama run the model, and llama.cpp's
+own docs say the agent loop is the caller's problem. That loop is what
+tiny_agent is: the delegation, the middleware, the tools, the memory, in a few
+thousand lines of headers with no virtual dispatch anywhere in the dispatch
+path. Point it at a frontier API or at a llama.cpp server on localhost and the
+agent code does not change.
 
-It includes:
-- OpenAI, Anthropic, Gemini, Mistral, and Cohere chat providers, plus any OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM, OpenRouter)
-- a ReAct agent loop with tool calling (JSON-schema validated), multi-turn history, and sub-agent delegation
-- true SSE token streaming, including tool-call deltas, on the OpenAI-compatible and Anthropic paths
-- MCP over stdio and HTTP
-- [Agent Skills](https://agentskills.io) (`SKILL.md`) loading
-- built-in middleware: summarize, trim-history, PII, retry, model fallback, context editing, call limits, logging, and more
-- embeddings, vector stores (flat, hnswlib, Qdrant), and a retriever
-- multimodal messages
+Three things carry the library.
+
+## Sub-agents that are just tools
+
+`DeepAgent` runs a ReAct loop: call the model, dispatch the tools it asked for,
+feed the results back, repeat. What makes it a *deep* agent is that an agent can
+become a tool for another agent, so delegation needs no new concept. A director
+calls an analyst; the analyst calls a fact-checker; each one is a `DynamicTool`
+with a JSON schema, and each can run on a different model from a different
+provider.
+
+```cpp
+auto fact_checker = make_shared_agent(
+    OpenAIChat{.model = "gpt-4o-mini", .api_key = key},
+    AgentConfig{.name = "fact_checker",
+                .system_prompt = "Reply VERIFIED or UNVERIFIED with one line of why."});
+
+auto analyst = make_shared_agent(
+    AnthropicChat{.model = "claude-sonnet-4-5", .api_key = anthropic_key},
+    AgentConfig{
+        .name = "analyst",
+        .system_prompt = "Analyze the topic. Verify every claim with fact_checker.",
+        .tools = {agent_as_tool(fact_checker, "fact_checker", "Verify a claim")}});
+
+auto director = make_shared_agent(
+    OpenAIChat{.model = "gpt-4o", .api_key = key},
+    AgentConfig{
+        .name = "director",
+        .tools = {agent_as_tool(analyst, "analyst", "Analyze a topic")},
+        .logger = Log{std::cerr, LogLevel::debug}});
+
+std::cout << director->run("What did renewables do to global CO2 emissions?");
+```
+
+A tool that throws never takes down the loop: the exception becomes a
+`tool_result` the model reads and recovers from, whether it derives from
+`std::exception` or not. A model that emits truncated tool arguments gets the
+same treatment rather than an exception out of the JSON parser. Delegation runs
+through `shared_ptr`, and calling `as_tool()` on a stack-allocated agent tells
+you which constructor to use instead of throwing `std::bad_weak_ptr` from inside
+the standard library.
+
+Examples: [`06_deep_agent.cpp`](examples/06_deep_agent.cpp),
+[`16_deep_agent_custom.cpp`](examples/16_deep_agent_custom.cpp).
+
+## Middleware that wraps the model call
+
+One signature. A middleware gets the mutable message vector and a `Next` it must
+call to reach the model:
+
+```cpp
+using MiddlewareFn = std::function<LLMResponse(std::vector<Message>&, Next)>;
+```
+
+That is enough to rewrite the prompt, short-circuit without calling the model,
+retry by calling `next` twice, or fall back to another provider. Fourteen are
+built in:
+
+| | |
+|---|---|
+| Context | `context_management`, `summarize`, `trim_history`, `context_editing` |
+| Reliability | `retry`, `model_retry`, `model_fallback`, `model_call_limit`, `tool_call_limit` |
+| Observability | `tracing`, `logging` |
+| Content | `pii`, `system_prompt`, `rationalize` |
+
+```cpp
+AgentConfig cfg;
+cfg.middlewares = {
+    middleware::logging(Log{std::cerr, LogLevel::debug}),
+    middleware::tracing({.tracer = tracer}),
+    middleware::context_management({.budget = {.max_tokens = 8000, .keep_recent = 6}}),
+    middleware::model_retry({.max_retries = 3}),
+};
+```
+
+There is a compile-time chain too. `make_middleware_stack(...)` folds the same
+callables through a `std::tuple` with no `std::function` and no allocation, for
+when the stack is known at build time.
+
+Examples: [`05_middleware.cpp`](examples/05_middleware.cpp),
+[`examples/middleware/`](examples/middleware) (eleven, one per middleware).
+
+## Providers behind concepts, not interfaces
+
+There is no `IChatModel`. A provider is a full specialization of
+`LLMModel<Provider, Kind>` that satisfies a concept:
+
+```cpp
+template<typename T>
+concept is_chat =
+    std::same_as<typename T::model_tag, chat_tag> &&
+    requires(T m, const std::vector<Message>& msgs, const std::vector<ToolSchema>& tools) {
+        { m.chat(msgs, tools) } -> std::same_as<LLMResponse>;
+        { m.model_name()      } -> std::convertible_to<std::string>;
+    };
+```
+
+Agents are templates over that concept, so the model call is a direct call with
+no vtable and no type erasure. Streaming is a separate refinement,
+`is_streaming_chat`, which providers opt into; the agent branches on
+`if constexpr` and providers without it still satisfy `is_chat`.
+
+Seven providers ship: OpenAI, Anthropic, Gemini, Mistral, Cohere, VoyageAI, and
+any OpenAI-compatible endpoint through `local::ollama()`, `local::llamacpp()`
+and `local::vllm()`. Adding one is a header, not a change to the core.
+
+When the provider comes from a config file rather than the type system,
+`ChatVariant` dispatches over `std::variant` and `init_chat_model("openai:gpt-4o")`
+builds one at runtime. `Runnable` composes models, agents and plain lambdas with
+`operator|`.
+
+## What else is in the box
+
+- **MCP** over stdio and HTTP, no paid tier
+- **[Agent Skills](https://agentskills.io)** (`SKILL.md`) loading, which no other C++ framework does
+- **True SSE streaming**, tool-call deltas included, on the OpenAI-compatible and Anthropic paths
+- **[Tracing](docs/observability.md)** to Arize Phoenix, Langfuse, or any OTLP collector, with no vendor SDK
+- **[Vector stores](docs/vector-stores.md)**: in-process, hnswlib, Qdrant, Chroma, behind one four-method concept
+- **[Context management](docs/context-management.md)** against an explicit token budget
+- Multimodal messages, embeddings, batch, an agent-skills registry
 
 ## Footprint
 
-Measured, not estimated (details in [docs/benchmarks.md](docs/benchmarks.md)): a complete streaming agent example is a **7.7 MB** stripped single binary (macOS arm64, TLS included), and the client uses **5.7 MB RSS** while streaming from llama.cpp on a Raspberry Pi 5. The agent layer is not the cost; the model is. CI builds and tests every push on arm64, the same CPU class as a Pi 5.
+Measured, not estimated (details in [docs/benchmarks.md](docs/benchmarks.md)): a
+complete streaming agent example is a **7.7 MB** stripped single binary (macOS
+arm64, TLS included), and the client uses **5.7 MB RSS** while streaming from
+llama.cpp on a Raspberry Pi 5. The agent layer is not the cost; the model is. CI
+builds and tests every push on arm64, the same CPU class as a Pi 5.
 
 How that compares in the C++ agent space, structurally:
 
@@ -33,396 +153,181 @@ How that compares in the C++ agent space, structurally:
 | Build | CMake + vcpkg | CMake | Bazel |
 | Agent Skills (SKILL.md) | yes | no | no |
 
-## Requirements
+## Quick start
 
-- CMake 3.20+
-- A C++20 compiler
-- [`vcpkg`](https://github.com/microsoft/vcpkg) with `VCPKG_ROOT` set
-- Internet access plus provider API keys for cloud-backed examples
-
-## Dependencies
-
-This repository uses a `vcpkg.json` manifest. Configuring the project installs:
-
-- `nlohmann-json`
-- `cpp-httplib` with OpenSSL support
-- `doctest`
-- `libenvpp`
-- `json-schema-validator`
-
-The core library target is header-only and primarily relies on `nlohmann-json` and `cpp-httplib`. The other dependencies are used by the repository's tests and validation helpers.
-
-## Quick Start
-
-From the repository root:
-
-```bash
-cmake --preset default
-cmake --build --preset default
-```
-
-To build an optimized version:
-
-```bash
-cmake --preset release
-cmake --build --preset release
-```
-
-### macOS / Linux / Raspberry Pi
+You need CMake 3.20+, a C++20 compiler, and [`vcpkg`](https://github.com/microsoft/vcpkg)
+with `VCPKG_ROOT` set. Configuring installs `nlohmann-json`, `cpp-httplib` with
+OpenSSL, `doctest`, `libenvpp` and `json-schema-validator`. The library target
+itself only needs the first two; the rest are for tests.
 
 ```bash
 export VCPKG_ROOT="$HOME/src/vcpkg"
 export OPENAI_API_KEY="your-key-here"
 
-cmake --preset default
+cmake --preset default          # or --preset release
 cmake --build --preset default
 ./build/examples/01_basic_chat
 ```
 
-### Windows PowerShell
+On Windows PowerShell the same commands work with `$env:VCPKG_ROOT = "C:\src\vcpkg"`
+and `--config Debug` on the build and test steps.
 
-```powershell
-$env:VCPKG_ROOT = "C:\src\vcpkg"
-$env:OPENAI_API_KEY = "your-key-here"
-
-cmake --preset default
-cmake --build --preset default --config Debug
-.\build\examples\Debug\01_basic_chat.exe
-```
-
-On single-config generators the binary may instead be under `build/examples/01_basic_chat` or `build/examples/01_basic_chat.exe`.
-
-## Provider Setup
-
-Environment variable names used by the code:
-
-- OpenAI: `OPENAI_API_KEY`
-- Anthropic: `CLAUDE_API_KEY`
-- Gemini: `GEMINI_API_KEY`
-
-The example binaries read API keys from the shell environment.
-
-The integration test in `tests/test_agent.cpp` also loads a repo-local `.env` file, so this works for the full test suite:
-
-```dotenv
-OPENAI_API_KEY=your-openai-key
-CLAUDE_API_KEY=your-anthropic-key
-GEMINI_API_KEY=your-gemini-key
-```
-
-## Basic Usage
-
-### Minimal chat example
+### Chat
 
 ```cpp
 #include <tiny_agent/tiny_agent.hpp>
 #include <tiny_agent/providers/openai.hpp>
-#include <cstdlib>
-#include <iostream>
 
-int main() {
-    using namespace tiny_agent;
+auto llm = OpenAIChat{.model = "gpt-4o-mini", .api_key = key};
 
-    const char* key = std::getenv("OPENAI_API_KEY");
-    if (!key) {
-        std::cerr << "OPENAI_API_KEY not set\n";
-        return 1;
-    }
-
-    auto llm = LLM<openai>{"gpt-4o-mini", key};
-
-    auto response = llm.chat({
-        Message::system("You are a concise assistant."),
-        Message::user("What is the capital of Japan?")
-    });
-
-    std::cout << response.message.text() << "\n";
-}
+auto response = llm.chat({Message::system("Be concise."),
+                          Message::user("What is the capital of Japan?")});
+std::cout << response.message.text() << "\n";
 ```
 
-### Agent with tools
+### An agent with a tool
 
 ```cpp
-#include <tiny_agent/tiny_agent.hpp>
-#include <tiny_agent/providers/openai.hpp>
-#include <cmath>
-#include <cstdlib>
-#include <iostream>
-
-int main() {
-    using namespace tiny_agent;
-
-    const char* key = std::getenv("OPENAI_API_KEY");
-    if (!key) {
-        std::cerr << "OPENAI_API_KEY not set\n";
-        return 1;
-    }
-
-    auto agent = Agent{
-        LLM<openai>{"gpt-4o-mini", key},
-        AgentConfig{
-            .system_prompt = "Use tools for calculations.",
-            .tools = {
-                Tool::create(
-                    "sqrt",
-                    "Square root of a number",
-                    [](const json& args) -> json {
-                        return std::sqrt(args["x"].get<double>());
-                    },
-                    {
-                        {"type", "object"},
-                        {"properties", {{"x", {{"type", "number"}}}}},
-                        {"required", {"x"}}
-                    }
-                )
-            }
+auto agent = make_agent(
+    OpenAIChat{.model = "gpt-4o-mini", .api_key = key},
+    AgentConfig{
+        .name = "math_agent",
+        .system_prompt = "Use tools for calculations.",
+        .tools = {
+            DynamicTool::create("sqrt", "Square root of a number",
+                [](const json& p) -> json { return std::sqrt(p["x"].get<double>()); },
+                {{"type", "object"},
+                 {"properties", {{"x", {{"type", "number"}}}}},
+                 {"required", {"x"}}})
         },
-        Log{std::cerr, LogLevel::info}
-    };
+        .logger = Log{std::cerr, LogLevel::info}});
 
-    std::cout << agent.run("What is sqrt(144)?") << "\n";
-}
+std::cout << agent.run("What is sqrt(144)?") << "\n";
 ```
 
-### Local / OpenAI-compatible providers
-
-You can also target a local or self-hosted OpenAI-compatible endpoint:
+### Against a local model
 
 ```cpp
-#include <tiny_agent/tiny_agent.hpp>
 #include <tiny_agent/providers/local.hpp>
-#include <iostream>
 
-int main() {
-    using namespace tiny_agent;
-
-    auto agent = Agent{
-        local::ollama("llama3"),
-        AgentConfig{
-            .system_prompt = "Reply briefly."
-        }
-    };
-
-    std::cout << agent.run("Give me one sentence about C++20.") << "\n";
-}
+auto agent = make_agent(local::ollama("llama3"),
+                        AgentConfig{.system_prompt = "Reply briefly."});
+std::cout << agent.run("One sentence about C++20.") << "\n";
 ```
 
-Helpers available in `providers/local.hpp`:
-
-- `tiny_agent::local::ollama()` with default base URL `http://localhost:11434`
-- `tiny_agent::local::llamacpp()` with default base URL `http://localhost:8080`
-- `tiny_agent::local::vllm()` with default base URL `http://localhost:8000`
-- `tiny_agent::local::create()` for any other OpenAI-compatible endpoint
+`local::ollama()` defaults to `http://localhost:11434`, `local::llamacpp()` to
+port 8080, `local::vllm()` to port 8000, and `local::create()` takes any other
+OpenAI-compatible URL.
 
 ## Logging
 
-The library uses a single `Log` class with six levels. The default level is `warn`, so everything is quiet out of the box. Lower the level to trace framework internals.
-
-Available levels (from most to least verbose):
+One `Log` class, six levels, default `warn`, so the library is quiet out of the
+box.
 
 | Level | What it shows |
 |-------|---------------|
-| `trace` | Raw HTTP bodies, JSON-RPC messages, tool arguments/results, full message contents |
-| `debug` | Agent loop iterations, LLM request/response summaries, token usage, MCP tool discovery |
+| `trace` | Raw HTTP bodies, JSON-RPC messages, tool arguments and results, full message contents |
+| `debug` | Loop iterations, request and response summaries, token usage, MCP tool discovery |
 | `info` | Tool calls, MCP connection events |
-| `warn` | Max iterations reached, retry attempts |
-| `error` | HTTP failures, tool execution errors, MCP errors |
+| `warn` | Max iterations reached, retry attempts, context still over budget |
+| `error` | HTTP failures, tool execution errors, exporter failures |
 | `off` | Silent |
 
-### Agent logging
-
 ```cpp
-auto agent = Agent{
-    LLM<openai>{"gpt-4o-mini", key},
-    AgentConfig{.name = "my_agent"},
-    Log{std::cerr, LogLevel::debug}
-};
+auto agent = make_agent(llm, AgentConfig{.name = "my_agent",
+                                         .logger = Log{std::cerr, LogLevel::debug}});
 ```
-
-Output at `debug` level:
 
 ```
 [DEBUG] [my_agent] initializing (max_iterations=10 tools=1 middlewares=0)
-[DEBUG] [my_agent] run("What is sqrt(144)?")
-[DEBUG] [my_agent] iteration 1/10 (messages=2)
+[DEBUG] [my_agent] run iteration 1/10 (messages=2)
 [DEBUG] [my_agent] LLM requested 1 tool call(s)
 [INFO] [my_agent] calling tool: sqrt
-[DEBUG] [my_agent] iteration 2/10 (messages=4)
+[DEBUG] [my_agent] run iteration 2/10 (messages=4)
 [DEBUG] [my_agent] done: stop
 ```
 
-### LLM logging
+`LLMConfig` carries its own `Log` for HTTP-level tracing, `mcp::connect_stdio()`
+takes one, `middleware::logging()` is one, and `agent.log().set_level(...)`
+changes it at runtime. `log.set_timestamps(true)` prefixes each line.
 
-The `LLMConfig` has its own `Log` field for HTTP-level tracing:
+## Provider setup
 
-```cpp
-auto llm = LLM<openai>{"gpt-4o-mini", LLMConfig{
-    .api_key = key,
-    .log = Log{std::cerr, LogLevel::debug}
-}};
-```
+`OPENAI_API_KEY`, `CLAUDE_API_KEY`, `GEMINI_API_KEY`. Examples read them from the
+environment. `tests/test_agent.cpp` also loads a repo-root `.env`.
 
-At `debug` you see request summaries and token usage. At `trace` you see the full request/response JSON.
+## Using it in your own build
 
-### MCP logging
-
-```cpp
-auto mcp = mcp::connect_stdio(command, args, Log{std::cerr, LogLevel::debug});
-```
-
-### Runtime changes
-
-```cpp
-agent.log().set_level(LogLevel::trace);
-```
-
-### Timestamps
-
-```cpp
-Log log{std::cerr, LogLevel::debug};
-log.set_timestamps(true);
-// 14:30:05.123 [DEBUG] [my_agent] iteration 1/10 (messages=2)
-```
-
-### Middleware logging
-
-```cpp
-middleware::logging(Log{std::cerr, LogLevel::debug})
-```
-
-## Building Your Own Program
-
-The simplest way to use this project in another CMake build is to vendor it and add it as a subdirectory:
+Vendor it and add a subdirectory:
 
 ```cmake
-cmake_minimum_required(VERSION 3.20)
-project(my_app LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 add_subdirectory(external/tiny_agent_cpp)
-
-add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE tiny_agent)
 ```
 
-Then include the headers you need in your program:
+There is no installed CMake package yet, so `add_subdirectory` is the path.
+Build options: `TINY_AGENT_BUILD_EXAMPLES`, `TINY_AGENT_BUILD_TESTS`,
+`TINY_AGENT_BUILD_BENCH` (all `ON`), and `TINY_AGENT_HNSWLIB` (`OFF`) for the
+hnswlib vector store.
 
-```cpp
-#include <tiny_agent/tiny_agent.hpp>
-#include <tiny_agent/providers/openai.hpp>
-```
+## Examples
 
-This repository does not currently install/export a packaged CMake target, so `add_subdirectory(...)` is the easiest integration path.
+Twenty numbered examples plus eleven middleware ones.
 
-## Build Options
+| | |
+|---|---|
+| `01`–`03` | chat, tool calling, nested agents |
+| `04`, `12` | MCP over stdio and HTTP |
+| `05`, `10` | middleware, custom and built-in |
+| `06`, `16` | deep agents and delegation |
+| `07`, `08` | multimodal, batch |
+| `09`, `14` | runtime provider selection, bind and kwargs |
+| `11` | Agent Skills |
+| `13`, `19` | embeddings and retrieval, vector store backends |
+| `15`, `20` | LLM summarization, context management |
+| `17` | SSE streaming against Ollama or llama.cpp |
+| `18` | tracing to Phoenix, Langfuse or stderr |
 
-The top-level CMake options are:
-
-- `TINY_AGENT_BUILD_EXAMPLES=ON`
-- `TINY_AGENT_BUILD_TESTS=ON`
-
-For a library-only build:
-
-```bash
-cmake --preset default -DTINY_AGENT_BUILD_EXAMPLES=OFF -DTINY_AGENT_BUILD_TESTS=OFF
-cmake --build --preset default
-```
-
-## Run Examples
-
-The repository currently builds these examples:
-
-- `01_basic_chat`: raw `LLM::chat(...)`
-- `02_tool_calling`: function calling with JSON-schema-style parameters
-- `03_nested_agents`: manager/researcher/writer composition
-- `04_mcp_client`: MCP stdio client that exposes MCP tools to an agent
-- `05_middleware`: logging, retry, trim-history, and custom middleware
-- `06_deep_agent`: multi-level delegation with fact-checking
-- `07_multimodal`: image + text message input
-- `08_batch` through `16_deep_agent_custom`: batching, runtime provider selection, built-in middleware, Agent Skills, MCP over HTTP, embeddings and retrieval, bind/kwargs, LLM summarize, custom deep agents
-- `17_streaming`: token-by-token SSE streaming against a local Ollama or llama.cpp server (`OLLAMA_BASE_URL`, `OLLAMA_MODEL`)
-
-Most examples use `OPENAI_API_KEY`, so set that first.
-
-Run them from the repository root:
-
-```bash
-./build/examples/01_basic_chat
-./build/examples/02_tool_calling
-./build/examples/03_nested_agents
-./build/examples/05_middleware
-./build/examples/06_deep_agent
-./build/examples/07_multimodal
-```
-
-The MCP example takes the server command on the command line:
+Most need `OPENAI_API_KEY`. `18`, `19` and `20` run without one. The MCP example
+takes the server command on the command line and needs Node:
 
 ```bash
 ./build/examples/04_mcp_client npx @modelcontextprotocol/server-filesystem .
 ```
 
-That example requires Node.js plus the MCP server package you want to launch.
-
-## Run Tests
-
-Run the full suite:
+## Tests
 
 ```bash
-ctest --preset default
+ctest --preset default          # add -C Debug on multi-config generators
 ```
 
-On Visual Studio or other multi-config generators:
+301 offline doctest cases across 19 files, no network and no keys required.
+`test_agent` is the twentieth and calls real providers; it needs API keys and
+is the only one that will fail without them.
 
-```powershell
-ctest --preset default -C Debug
-```
-
-The offline tests are:
-
-- `test_types`
-- `test_tool`
-- `test_middleware`
-
-The integration test is:
-
-- `test_agent`
-
-`test_agent` exercises real providers and expects API keys. It loads `.env` from the repository root.
-
-## Platform Notes
-
-### macOS
-
-- Install Xcode Command Line Tools, CMake, and `vcpkg`.
-- HTTPS requests use the system certificate bundle path `/etc/ssl/cert.pem` on Apple platforms. If you hit TLS errors, make sure that file exists and points to a valid CA bundle.
-
-### Linux
-
-- Any recent GCC or Clang with C++20 support should work.
-- Install the usual build tools first, for example `build-essential`, `cmake`, `git`, `curl`, `zip`, `unzip`, and `tar`.
-
-### Raspberry Pi
-
-- Use a 64-bit Raspberry Pi OS image if possible.
-- Follow the same Linux build steps.
-- Prefer `cmake --preset release` for smaller, faster binaries on Pi hardware.
-- Cloud providers generally work well on Raspberry Pi because the heavy inference runs remotely.
-- For local inference, point `providers/local.hpp` at any OpenAI-compatible server reachable from the Pi, whether it runs on the Pi itself or elsewhere on your network.
-
-### Windows
-
-- Use Visual Studio 2022 Build Tools or a full Visual Studio install with the C++ workload.
-- `cmake --build` and `ctest` may need `--config Debug` or `--config Release` with multi-config generators.
-- PowerShell environment variables use the `$env:NAME = "value"` syntax shown above.
-
-## Verified Commands
-
-The following repository commands were verified successfully on macOS:
+Tests that need a service skip themselves unless it is configured:
 
 ```bash
-cmake --preset default
-cmake --build --preset default
-ctest --preset default
+PHOENIX_BASE_URL=http://localhost:6006 ctest --preset default -R test_tracing
+QDRANT_URL=http://localhost:6333 CHROMA_URL=http://localhost:8000 \
+  ctest --preset default -R test_vectorstore_remote
 ```
+
+## Docs
+
+- [Observability](docs/observability.md): tracing, exporters, Phoenix, Langfuse
+- [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma
+- [Context management](docs/context-management.md): token budgets and compaction
+- [Benchmarks](docs/benchmarks.md): binary size, RSS, time to first token
+- [Direction](docs/direction-2026-08.md): where this is going and why
+
+## Platform notes
+
+- **macOS**: HTTPS uses `/etc/ssl/cert.pem`. TLS errors usually mean that file is missing.
+- **Linux**: any recent GCC or Clang with C++20. Install `build-essential`, `cmake`, `git`, `curl`, `zip`, `unzip`, `tar`.
+- **Raspberry Pi**: 64-bit Raspberry Pi OS, the Linux steps, and `--preset release`. Cloud providers work fine because the inference happens elsewhere; for local inference point `local::llamacpp()` at any OpenAI-compatible server on the Pi or on your network.
+- **Windows**: Visual Studio 2022 Build Tools with the C++ workload. The MCP stdio transport is POSIX-only, so `04_mcp_client` is not built there.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
