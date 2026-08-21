@@ -1,16 +1,37 @@
 # tiny_agent
 
-`tiny_agent` is a header-only C++20 agent framework for building LLM-powered applications with a small, composable API.
+[![CI](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rhajamor/tiny_agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**The header-only C++20 agent framework: multi-provider, MCP built in, MIT licensed, and small enough to run your agent on a Raspberry Pi.**
+
+Agent inference in C++ is a solved problem (llama.cpp, Ollama). Agent *orchestration* in C++ is not: the loop, the tools, the memory, the delegation. `tiny_agent` is that layer, in about 5,000 lines of headers with no virtual dispatch, built on C++20 concepts and `std::variant`. Point it at a frontier API or at a llama.cpp server on localhost; the agent code is identical.
 
 It includes:
-- OpenAI, Anthropic, and Gemini providers
-- local OpenAI-compatible providers such as Ollama, llama.cpp, and vLLM
-- tool calling with JSON schemas
-- multi-turn chat and conversation history
-- middleware
-- nested/sub-agent delegation
-- MCP stdio integration
+- OpenAI, Anthropic, Gemini, Mistral, and Cohere chat providers, plus any OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM, OpenRouter)
+- a ReAct agent loop with tool calling (JSON-schema validated), multi-turn history, and sub-agent delegation
+- true SSE token streaming, including tool-call deltas, on the OpenAI-compatible and Anthropic paths
+- MCP over stdio and HTTP
+- [Agent Skills](https://agentskills.io) (`SKILL.md`) loading
+- 12 built-in middleware: summarize, trim-history, PII, retry, model fallback, context editing, call limits, logging, and more
+- embeddings, vector stores (flat, hnswlib, Qdrant), and a retriever
 - multimodal messages
+
+## Footprint
+
+The library is ~5,000 lines of headers. A complete streaming agent example (`14_streaming`, Release, stripped) is a **7.7 MB** single binary on macOS arm64, TLS included; there is no runtime beyond system libraries. The CI arm64 job builds and tests every push on the same CPU class as a Raspberry Pi 5.
+
+How that compares in the C++ agent space, structurally:
+
+| | tiny_agent | [ai-sdk-cpp](https://github.com/ClickHouse/ai-sdk-cpp) | [agents.cpp](https://github.com/RunEdgeAI/agents.cpp) |
+|---|---|---|---|
+| Header-only | yes | no | no |
+| License | MIT | Apache-2.0 | evaluation license, MCP in paid tier |
+| MCP | stdio + HTTP, free | no | paid |
+| Local models (Ollama/llama.cpp) | yes | OpenAI-compatible only | yes |
+| Gemini | yes | no | yes |
+| Build | CMake + vcpkg | CMake | Bazel |
+| Agent Skills (SKILL.md) | yes | no | no |
 
 ## Requirements
 
@@ -320,6 +341,13 @@ The repository currently builds these examples:
 - `05_middleware`: logging, retry, trim-history, and custom middleware
 - `06_deep_agent`: multi-level delegation with fact-checking
 - `07_multimodal`: image + text message input
+- `08_batch`: batching prompts
+- `09_init_chat_model`: runtime provider selection by name
+- `10_builtin_middleware`: the built-in middleware catalog
+- `11_skills`: loading Agent Skills from `SKILL.md` folders
+- `12_mcp_http`: MCP over HTTP transport
+- `13_embeddings_retriever`: embeddings, vector stores, and retrieval
+- `14_streaming`: token-by-token SSE streaming against a local Ollama server
 
 Most examples use `OPENAI_API_KEY`, so set that first.
 
@@ -356,17 +384,9 @@ On Visual Studio or other multi-config generators:
 ctest --preset default -C Debug
 ```
 
-The offline tests are:
+Fifteen suites run offline, covering types, tools, middleware, memory, skills, vector stores, retrieval, SSE parsing, and stream accumulation.
 
-- `test_types`
-- `test_tool`
-- `test_middleware`
-
-The integration test is:
-
-- `test_agent`
-
-`test_agent` exercises real providers and expects API keys. It loads `.env` from the repository root.
+`test_agent` additionally exercises real providers when API keys are present (it loads `.env` from the repository root) and skips those cases cleanly when they are not, so a keyless run is green.
 
 ## Platform Notes
 
