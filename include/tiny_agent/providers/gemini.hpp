@@ -255,7 +255,9 @@ public:
         self.extra = extra;
         self.log = log;
 
-        auto cfg = overrides.api_key.empty() ? self : LLMConfig::merge(self, overrides);
+        // Always merge: a per-call override of temperature or max_tokens has to
+        // land even when the caller did not also hand over an api_key.
+        auto cfg = LLMConfig::merge(self, overrides);
         lg.debug("llm", "gemini chat (model=" + model
             + " messages=" + std::to_string(msgs.size())
             + " tools=" + std::to_string(tools.size()) + ")");
