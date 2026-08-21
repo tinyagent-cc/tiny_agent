@@ -141,6 +141,14 @@ arm64, TLS included), and the client uses **5.7 MB RSS** while streaming from
 llama.cpp on a Raspberry Pi 5. The agent layer is not the cost; the model is. CI
 builds and tests every push on arm64, the same CPU class as a Pi 5.
 
+Both are the real `17_streaming` example, over SSH, against a local llama.cpp
+server:
+
+| Raspberry Pi 5 | Jetson Orin Nano |
+|---|---|
+| ![17_streaming on a Raspberry Pi 5](docs/assets/pi5-streaming.gif) | ![17_streaming on a Jetson Orin Nano](docs/assets/jetson-streaming.gif) |
+| Qwen2.5-3B-Instruct, CPU only: 5.48 tok/s | Qwen2.5-3B-Instruct, GPU, 36 layers offloaded: 23.9 tok/s |
+
 How that compares in the C++ agent space, structurally:
 
 | | tiny_agent | [ai-sdk-cpp](https://github.com/ClickHouse/ai-sdk-cpp) | [agents.cpp](https://github.com/RunEdgeAI/agents.cpp) |
