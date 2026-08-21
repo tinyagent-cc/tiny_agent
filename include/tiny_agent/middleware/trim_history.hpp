@@ -1,31 +1,26 @@
 #pragma once
-#include "../core/middleware.hpp"
+// Keeps the conversation under a fixed *message count*. For a token budget and
+// the gentler techniques that come before dropping messages, use
+// context_management() in context.hpp — this is the blunt instrument.
+//
+// Trimming snaps past orphaned tool results, so the surviving conversation never
+// starts with a tool message the provider would reject.
+
+#include "context.hpp"
 
 namespace tiny_agent::middleware {
 
 template<std::size_t MaxMessages = 50>
 struct TrimHistory {
     LLMResponse operator()(std::vector<Message>& msgs, Next next) const {
-        if (msgs.size() > MaxMessages + 1) {
-            bool has_sys = !msgs.empty() && msgs.front().role == Role::system;
-            std::size_t start = has_sys ? 1 : 0;
-            auto excess = msgs.size() - (has_sys ? 1 : 0) - MaxMessages;
-            msgs.erase(msgs.begin() + static_cast<long>(start),
-                       msgs.begin() + static_cast<long>(start + excess));
-        }
+        context::trim_to_message_count(msgs, MaxMessages);
         return next(msgs);
     }
 };
 
 inline MiddlewareFn trim_history(std::size_t max_messages) {
     return [=](std::vector<Message>& msgs, Next next) -> LLMResponse {
-        if (msgs.size() > max_messages + 1) {
-            bool has_sys = !msgs.empty() && msgs.front().role == Role::system;
-            std::size_t start = has_sys ? 1 : 0;
-            auto excess = msgs.size() - (has_sys ? 1 : 0) - max_messages;
-            msgs.erase(msgs.begin() + static_cast<long>(start),
-                       msgs.begin() + static_cast<long>(start + excess));
-        }
+        context::trim_to_message_count(msgs, max_messages);
         return next(msgs);
     };
 }

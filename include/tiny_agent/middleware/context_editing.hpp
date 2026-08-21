@@ -1,65 +1,34 @@
 #pragma once
-#include "../core/middleware.hpp"
+// Blanks older tool output once the conversation gets long, keeping the messages
+// themselves so tool-call pairing stays intact. This is stage one of the ladder
+// in context_management(); use that instead when you want the full story rather
+// than this one technique.
+//
+// Modelled on LangChain's ContextEditingMiddleware with ClearToolUsesEdit.
+
+#include "context.hpp"
 
 namespace tiny_agent::middleware {
 
-// Manage conversation context by clearing older tool-call outputs when token
-// limits are approached.  Inspired by LangChain's ContextEditingMiddleware +
-// ClearToolUsesEdit.
-//
-//   trigger            – approximate token count that triggers clearing.
-//   keep               – number of most-recent tool results to preserve.
-//   placeholder        – text inserted for cleared tool outputs.
-//   clear_tool_inputs  – also blank tool-call arguments on assistant messages.
-
 struct ContextEditingConfig {
+    // Token count at which clearing kicks in.
     std::size_t trigger           = 100'000;
+    // How many of the most recent tool results to leave alone.
     int         keep              = 3;
     std::string placeholder       = "[cleared]";
+    // Also blank the arguments on the assistant tool calls whose results went.
     bool        clear_tool_inputs = false;
+    // Empty means approx_token_count.
+    TokenCounter count;
 };
 
 inline MiddlewareFn context_editing(ContextEditingConfig cfg = {}) {
     return [cfg](std::vector<Message>& msgs, Next next) -> LLMResponse {
-        // Approximate token count (≈ 4 chars per token).
-        std::size_t approx_tokens = 0;
-        for (auto& m : msgs) approx_tokens += m.text().size() / 4;
-
-        if (approx_tokens >= cfg.trigger) {
-            // Count tool-result messages from the end.
-            int tool_count = 0;
-            for (auto it = msgs.rbegin(); it != msgs.rend(); ++it)
-                if (it->role == Role::tool) ++tool_count;
-
-            if (tool_count > cfg.keep) {
-                int to_clear = tool_count - cfg.keep;
-                // Walk forward (oldest first) and clear.
-                for (auto& m : msgs) {
-                    if (to_clear <= 0) break;
-                    if (m.role == Role::tool) {
-                        m.content = cfg.placeholder;
-                        --to_clear;
-                    }
-                }
-            }
-
-            if (cfg.clear_tool_inputs) {
-                // Walk assistant messages and strip tool-call arguments
-                // for tool calls whose results were cleared.
-                int remaining = tool_count - cfg.keep;
-                for (auto& m : msgs) {
-                    if (remaining <= 0) break;
-                    if (m.role == Role::assistant) {
-                        for (auto& tc : m.tool_calls) {
-                            if (remaining <= 0) break;
-                            tc.arguments = json::object();
-                            --remaining;
-                        }
-                    }
-                }
-            }
+        auto tokens = cfg.count ? cfg.count(msgs) : approx_token_count(msgs);
+        if (tokens >= cfg.trigger) {
+            auto keep = cfg.keep < 0 ? std::size_t{0} : static_cast<std::size_t>(cfg.keep);
+            context::clear_tool_results(msgs, keep, cfg.placeholder, cfg.clear_tool_inputs);
         }
-
         return next(msgs);
     };
 }

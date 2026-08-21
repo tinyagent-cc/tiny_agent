@@ -21,6 +21,7 @@ set(UNIT_TESTS
     test_hardening
     test_tracing
     test_vectorstore_remote
+    test_context
 )
 
 foreach(t ${UNIT_TESTS})
