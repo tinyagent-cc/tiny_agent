@@ -6,6 +6,8 @@ find_package(nlohmann_json_schema_validator REQUIRED)
 set(UNIT_TESTS
     test_types
     test_tool
+    test_sse
+    test_stream
     test_middleware
     test_middleware_builtins
     test_init_chat_model
