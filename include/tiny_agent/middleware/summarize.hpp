@@ -1,12 +1,23 @@
 #pragma once
-#include "../core/middleware.hpp"
+// Folds the middle of a long conversation into one summary message, keeping the
+// system prompt and the recent turns verbatim. This is stage two of the ladder
+// in context_management(); use that instead when you want the full story rather
+// than this one technique.
+//
+// The summary can be extractive (no model call, the default) or written by a
+// model via llm_fn. Long histories are summarized in chunks and then the chunk
+// summaries are summarized again, so one oversized conversation does not become
+// one oversized summarization prompt.
+
+#include "context.hpp"
 #include "../core/model.hpp"
 #include <functional>
 #include <sstream>
 
 namespace tiny_agent::middleware {
 
-using SummarizerFn = std::function<std::string(const std::vector<Message>&)>;
+// SummarizerFn, extractive_summarize, TokenCounter and approx_token_count come
+// from context.hpp — they are shared with the other context middleware.
 
 inline const char* DEFAULT_SUMMARIZE_PROMPT = R"(
 You are a conversation summarizer. Condense the following conversation into a concise summary that preserves:
@@ -19,25 +30,6 @@ Write in third person, past tense. Keep the summary under 200 words.
 
 Conversation:
 )";
-
-inline std::string extractive_summarize(
-    const std::vector<Message>& msgs, std::size_t max_per_msg = 150)
-{
-    std::string out;
-    out.reserve(msgs.size() * (max_per_msg + 20));
-    for (auto& m : msgs) {
-        auto t = m.text();
-        if (t.empty()) continue;
-        std::size_t limit = (m.role == Role::tool) ? max_per_msg / 3 : max_per_msg;
-        out += to_string(m.role);
-        if (m.name) { out += '('; out += *m.name; out += ')'; }
-        out += ": ";
-        if (t.size() > limit) { out += t.substr(0, limit); out += "..."; }
-        else                    out += t;
-        out += '\n';
-    }
-    return out;
-}
 
 struct LLMSummarizer {
     std::string prompt = DEFAULT_SUMMARIZE_PROMPT;
@@ -57,40 +49,24 @@ struct LLMSummarizer {
 
 namespace detail {
 
+// Retained for callers that used it directly; approx_token_count is the one to
+// reach for now, since it also counts tool-call arguments.
 inline std::size_t approx_tokens(const std::vector<Message>& msgs) {
-    std::size_t t = 0;
-    for (auto& m : msgs) t += m.text().size() / 4;
-    return t;
+    return approx_token_count(msgs);
 }
 
 inline bool compress_messages(std::vector<Message>& msgs,
-                               std::size_t trigger_tokens,
-                               std::size_t keep_recent,
-                               const SummarizerFn& summarizer) {
-    if (approx_tokens(msgs) <= trigger_tokens || msgs.size() < keep_recent + 2)
+                              std::size_t trigger_tokens,
+                              std::size_t keep_recent,
+                              const SummarizerFn& summarizer) {
+    if (approx_token_count(msgs) <= trigger_tokens || msgs.size() < keep_recent + 2)
         return false;
-
-    bool has_sys = !msgs.empty() && msgs.front().role == Role::system;
-    std::size_t start = has_sys ? 1 : 0;
-    std::size_t end   = msgs.size() - keep_recent;
-    if (end <= start) return false;
-
-    std::vector<Message> to_summarize(
-        msgs.begin() + static_cast<long>(start),
-        msgs.begin() + static_cast<long>(end));
-    auto summary_text = summarizer(to_summarize);
-
-    std::vector<Message> compressed;
-    compressed.reserve(keep_recent + 2);
-    if (has_sys) compressed.push_back(std::move(msgs[0]));
-    compressed.push_back(
-        Message::system("[Conversation summary]\n" + std::move(summary_text)));
-    for (std::size_t i = end; i < msgs.size(); ++i)
-        compressed.push_back(std::move(msgs[i]));
-    msgs = std::move(compressed);
-    return true;
+    return context::summarize_middle(msgs, keep_recent, summarizer,
+                                     "[Conversation summary]\n");
 }
 
+// Splits an oversized history into chunks the summarizer can digest, summarizes
+// each, then summarizes the summaries.
 inline std::vector<Message> chunk_and_summarize(
     const std::vector<Message>& msgs,
     std::size_t chunk_tokens,
@@ -100,12 +76,11 @@ inline std::vector<Message> chunk_and_summarize(
     std::vector<Message> result;
     if (msgs.empty()) return result;
 
-    std::size_t total_tokens = approx_tokens(msgs);
+    std::size_t total_tokens = approx_token_count(msgs);
     if (total_tokens <= chunk_tokens) {
         std::ostringstream ss;
         ss << prompt << extractive_summarize(msgs);
-        auto summary = llm_call(ss.str());
-        result.push_back(Message::assistant(summary));
+        result.push_back(Message::assistant(llm_call(ss.str())));
         return result;
     }
 
@@ -117,7 +92,7 @@ inline std::vector<Message> chunk_and_summarize(
     for (std::size_t i = 0; i < msgs.size(); i += chunk_size) {
         auto end = std::min(i + chunk_size, msgs.size());
         std::vector<Message> chunk(msgs.begin() + static_cast<long>(i),
-                                    msgs.begin() + static_cast<long>(end));
+                                   msgs.begin() + static_cast<long>(end));
         std::ostringstream ss;
         ss << prompt << extractive_summarize(chunk);
         chunk_summaries.push_back(llm_call(ss.str()));
@@ -129,20 +104,11 @@ inline std::vector<Message> chunk_and_summarize(
     }
 
     std::string combined;
-    for (auto& s : chunk_summaries) {
-        combined += "- ";
-        combined += s;
-        combined += '\n';
-    }
+    for (auto& s : chunk_summaries) { combined += "- "; combined += s; combined += '\n'; }
 
-    // Second pass: summarize the chunk summaries
-    {
-        std::ostringstream ss;
-        ss << prompt << "\n\nChunk summaries:\n" << combined;
-        auto final_summary = llm_call(ss.str());
-        result.push_back(Message::assistant(final_summary));
-    }
-
+    std::ostringstream ss;
+    ss << prompt << "\n\nChunk summaries:\n" << combined;
+    result.push_back(Message::assistant(llm_call(ss.str())));
     return result;
 }
 
@@ -155,48 +121,35 @@ struct SummarizeConfig {
     std::string  prompt           = DEFAULT_SUMMARIZE_PROMPT;
     SummarizerFn fallback;
     std::function<std::string(const std::string&)> llm_fn;
+    TokenCounter count;
 };
 
 inline MiddlewareFn summarize(SummarizeConfig cfg = {}) {
     if (!cfg.fallback)
-        cfg.fallback = [](const std::vector<Message>& m) {
-            return extractive_summarize(m);
-        };
+        cfg.fallback = [](const std::vector<Message>& m) { return extractive_summarize(m); };
 
     return [cfg](std::vector<Message>& msgs, Next next) -> LLMResponse {
-        if (detail::approx_tokens(msgs) <= cfg.trigger_tokens || msgs.size() < cfg.keep_recent + 2)
+        auto tokens = cfg.count ? cfg.count(msgs) : approx_token_count(msgs);
+        if (tokens <= cfg.trigger_tokens || msgs.size() < cfg.keep_recent + 2)
             return next(msgs);
 
-        bool has_sys = !msgs.empty() && msgs.front().role == Role::system;
-        std::size_t start = has_sys ? 1 : 0;
-        std::size_t end   = msgs.size() - cfg.keep_recent;
-        if (end <= start) return next(msgs);
-
-        std::vector<Message> to_summarize(
-            msgs.begin() + static_cast<long>(start),
-            msgs.begin() + static_cast<long>(end));
-
-        std::string summary_text;
-        if (cfg.llm_fn) {
-            auto llm_results = detail::chunk_and_summarize(
-                to_summarize, cfg.chunk_tokens, cfg.prompt, cfg.llm_fn);
-            if (!llm_results.empty()) {
-                summary_text = "[LLM-summarized]\n";
-                for (auto& m : llm_results) summary_text += m.text() + "\n";
+        // Route the whole summarization through one summarizer so the middle is
+        // sliced at a tool-safe boundary exactly once.
+        SummarizerFn summarizer = [&cfg](const std::vector<Message>& middle) -> std::string {
+            if (cfg.llm_fn) {
+                auto parts = detail::chunk_and_summarize(middle, cfg.chunk_tokens,
+                                                         cfg.prompt, cfg.llm_fn);
+                if (!parts.empty()) {
+                    std::string text = "[LLM-summarized]\n";
+                    for (auto& m : parts) { text += m.text(); text += '\n'; }
+                    return text;
+                }
             }
-        }
+            return cfg.fallback(middle);
+        };
 
-        if (summary_text.empty())
-            summary_text = cfg.fallback(to_summarize);
-
-        std::vector<Message> compressed;
-        compressed.reserve(cfg.keep_recent + 2);
-        if (has_sys) compressed.push_back(std::move(msgs[0]));
-        compressed.push_back(
-            Message::system("[Conversation summary]\n" + std::move(summary_text)));
-        for (std::size_t i = end; i < msgs.size(); ++i)
-            compressed.push_back(std::move(msgs[i]));
-        msgs = std::move(compressed);
+        context::summarize_middle(msgs, cfg.keep_recent, summarizer,
+                                  "[Conversation summary]\n");
         return next(msgs);
     };
 }
