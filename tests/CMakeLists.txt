@@ -23,6 +23,7 @@ set(UNIT_TESTS
     test_vectorstore_remote
     test_context
     test_readme_snippets
+    test_vs_weaviate
 )
 
 foreach(t ${UNIT_TESTS})
