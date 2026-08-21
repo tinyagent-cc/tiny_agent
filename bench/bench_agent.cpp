@@ -141,7 +141,7 @@ struct MockLLM {
     }
 
     std::string model_name() const { return model; }
-    float temperature() const { return 0.7f; }
+    float get_temperature() const { return 0.7f; }
 
     std::vector<std::string> batch(std::vector<std::string> inputs, const RunConfig& cfg = {}) {
         std::vector<std::string> out;
