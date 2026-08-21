@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in tiny_agent doesn't work the way the docs say it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal repro
+      description: >-
+        The smallest code that reproduces it. If it needs a live provider or
+        service, say which one and whether a mock/offline repro is possible.
+      render: cpp
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: tiny_agent version or commit
+      placeholder: v0.3.0, or a commit SHA if building from main
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - Linux x64
+        - Linux arm64 (incl. Raspberry Pi)
+        - macOS arm64
+        - Windows x64
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler and version
+      placeholder: AppleClang 21.0.0, GCC 13.2, MSVC 19.40, ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Provider/model involved, relevant CMake options, log output.

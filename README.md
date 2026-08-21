@@ -265,10 +265,37 @@ add_subdirectory(external/tiny_agent_cpp)
 target_link_libraries(my_app PRIVATE tiny_agent)
 ```
 
-There is no installed CMake package yet, so `add_subdirectory` is the path.
 Build options: `TINY_AGENT_BUILD_EXAMPLES`, `TINY_AGENT_BUILD_TESTS`,
 `TINY_AGENT_BUILD_BENCH` (all `ON`), and `TINY_AGENT_HNSWLIB` (`OFF`) for the
-hnswlib vector store.
+hnswlib vector store. Set these `OFF` for a vendored build; a consumer does not
+need the examples, tests, or benchmarks.
+
+Or install it and `find_package`:
+
+```bash
+cmake --preset default -DTINY_AGENT_BUILD_EXAMPLES=OFF -DTINY_AGENT_BUILD_TESTS=OFF -DTINY_AGENT_BUILD_BENCH=OFF
+cmake --build --preset default
+cmake --install build --prefix /path/to/prefix
+```
+
+```cmake
+find_package(tiny_agent CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE tiny_agent::tiny_agent)
+```
+
+Point CMake at the prefix with `-DCMAKE_PREFIX_PATH=/path/to/prefix` if it is
+not a system location.
+
+**vcpkg, before this port is in the public registry.** `ports/tiny-agent` in
+this repo is a working port; use it as an overlay until it upstreams:
+
+```bash
+vcpkg install tiny-agent --overlay-ports=/path/to/tiny_agent_cpp/ports/tiny-agent
+```
+
+or in a manifest project, add an `"overlay-ports"` entry to
+`vcpkg-configuration.json` pointing at that directory and depend on
+`tiny-agent` from `vcpkg.json` as usual.
 
 ## Examples
 

@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(nlohmann_json CONFIG)
+find_dependency(httplib CONFIG)
+
+if(@TINY_AGENT_HNSWLIB@)
+    find_dependency(hnswlib CONFIG)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/tiny_agentTargets.cmake")
+
+check_required_components(tiny_agent)
