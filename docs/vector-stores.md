@@ -39,6 +39,7 @@ get the batch path where it exists and a loop where it does not.
 | `QdrantVectorStore` | `vectorstore/qdrant.hpp` | a running Qdrant |
 | `ChromaVectorStore` | `vectorstore/chroma.hpp` | a running Chroma |
 | `WeaviateVectorStore` | `vectorstore/weaviate.hpp` | a running Weaviate |
+| `RedisVectorStore` | `vectorstore/redis.hpp` | a Redis with the search module |
 | `AnyVectorStore` | `retriever.hpp` | nothing, wraps any of the above |
 
 `FlatVectorStore` is an O(n) scan. It is the right choice up to a few thousand
@@ -170,6 +171,84 @@ write recreates it.
 `docs/proofs/weaviate.md` has the probes those decisions came from, run against
 `semitechnologies/weaviate:1.39.0`.
 
+## Redis
+
+```cpp
+#include <tiny_agent/vectorstore/redis.hpp>
+
+RedisVectorStore store{"redis://localhost:6379", "my_docs"};
+```
+
+Needs the search module: `redis/redis-stack-server`, Redis 8, or Redis Cloud
+with search enabled. Plain Redis without the module answers the first write with
+`ERR unknown command 'FT.CREATE'`.
+
+The url takes the shapes people actually type. `localhost`, `localhost:6379`,
+`redis://cache:6380/3` for a numbered database, `redis://alice:s3cret@cache:6379`
+for an ACL user, `redis://s3cret@cache:6379` for a plain `requirepass` server.
+Credentials in `RedisConfig` override anything in the url. `rediss://` throws at
+construction: there is no TLS in this client, and saying so beats failing at the
+handshake. Terminate TLS in front of it if you need it.
+
+**No client library.** Redis speaks RESP over a raw TCP socket rather than HTTP,
+so this adapter cannot ride on the httplib client the Qdrant and Chroma adapters
+use. The protocol it needs is small: encode a command as an array of
+length-prefixed bulk strings, parse the five RESP2 reply types back. That client
+is about 280 lines of code at the top of the header, socket handling included. It
+includes `<httplib.h>` for the platform work rather than duplicating it, because
+that is where this codebase's winsock-versus-POSIX split already lives: on
+Windows httplib includes `<winsock2.h>` and `<ws2tcpip.h>` and runs `WSAStartup`
+from a static initialiser, on POSIX it pulls in `<netdb.h>` and `<sys/socket.h>`.
+Everything after that is `getaddrinfo`, `connect`, `send`, `recv`, which are the
+same calls on both.
+
+**How it maps onto Redis.** One index per store, over hashes keyed
+`<index_name>:<document_id>`:
+
+```
+FT.CREATE my_docs ON HASH PREFIX 1 my_docs: SCHEMA
+  embedding VECTOR HNSW 6 TYPE FLOAT32 DIM 1536 DISTANCE_METRIC COSINE
+```
+
+Created on the first write and sized from the first embedding, like Qdrant's
+collection. `RedisConfig` swaps `HNSW` for `FLAT` and `COSINE` for `L2` or `IP`.
+Only the vector field is in the schema; `content` and `metadata` ride along as
+ordinary hash fields, because `FT.SEARCH … RETURN` reads them straight off the
+hash and indexing text nobody queries by only costs memory.
+
+Documents go out as pipelined `HSET`s, so `add_batch` is one socket write and one
+batch of replies rather than N round trips. The embedding is a raw little-endian
+float32 blob, which is what the vector field expects, and it travels as a bulk
+string argument, so its NUL and CR bytes never meet a parser.
+
+Searches use the KNN form with the query vector passed as a parameter:
+
+```
+FT.SEARCH my_docs "*=>[KNN 4 @embedding $BLOB AS vector_score]"
+  PARAMS 2 BLOB <blob> RETURN 3 content metadata vector_score
+  SORTBY vector_score LIMIT 0 4 DIALECT 2
+```
+
+`DIALECT 2` is not optional: vector query syntax does not exist in dialect 1.
+Passing the vector through `PARAMS` rather than splicing it into the query string
+is what keeps binary bytes away from the query parser.
+
+**Scores.** RediSearch reports a distance. Cosine and inner-product distances are
+both `1 - similarity`, so the adapter inverts them and the number comes back
+identical to what `FlatVectorStore` computes for the same vectors. L2 is a
+squared euclidean distance with no upper bound, so it maps through `1/(1+d)`
+instead, which preserves the ranking but is not comparable to a cosine score.
+
+**Dimension mismatches.** A hash whose vector is the wrong length is accepted by
+`HSET` and then silently dropped from the index, which looks exactly like a write
+that worked until a search comes back short. `add()` checks the length against
+the index and throws instead.
+
+`size()` asks the server (`FT.SEARCH <index> * LIMIT 0 0`) rather than counting
+locally. `clear()` deletes the documents by `SCAN` and `DEL` and then drops the
+index, so it also cleans up hashes left behind by an index that was never
+created; the next write recreates both.
+
 ## Picking a backend at runtime
 
 The concept resolves at compile time, which is what you want when the backend is
@@ -197,15 +276,23 @@ without a server. That is what lets `tests/test_vectorstore_remote.cpp` and
 round-trip against a live server when `QDRANT_URL`, `CHROMA_URL` or
 `WEAVIATE_URL` is set.
 
+If it is not a REST service, `vectorstore/redis.hpp` is the pattern: the same
+static pure functions for wire format and reply parsing, plus a small protocol
+client above them that is also testable on its own. `tests/test_vs_redis.cpp`
+asserts RESP encoding and every command the adapter can send with no server
+present, then runs the live round-trip when `REDIS_URL` is set.
+
 ## Example
 
 `examples/19_vector_store.cpp` indexes a small corpus and queries it through
-`FlatVectorStore`, Qdrant, Chroma, Weaviate and `AnyVectorStore` in one run. They
+`FlatVectorStore`, Qdrant, Chroma, Weaviate, Redis and `AnyVectorStore` in
+one run. They
 all return the same ranking and the same scores, which is the point of
 normalizing the metric in the adapters.
 
 ```bash
 ./build/examples/19_vector_store
 QDRANT_URL=http://localhost:6333 CHROMA_URL=http://localhost:8000 \
-  WEAVIATE_URL=http://localhost:8080 ./build/examples/19_vector_store
+  WEAVIATE_URL=http://localhost:8080 \\
+  REDIS_URL=redis://localhost:6379 ./build/examples/19_vector_store
 ```
