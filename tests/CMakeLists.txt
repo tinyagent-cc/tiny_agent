@@ -5,6 +5,8 @@ find_package(nlohmann_json_schema_validator REQUIRED)
 
 set(UNIT_TESTS
     test_types
+    test_sse
+    test_stream
     test_tool
     test_middleware
     test_middleware_builtins

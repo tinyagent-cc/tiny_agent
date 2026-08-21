@@ -83,8 +83,7 @@ TEST_CASE("schema: wrong type is rejected") {
 
 // ── OpenAI ──────────────────────────────────────────────────────────────────
 
-TEST_CASE("openai: basic chat") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("openai: basic chat" * doctest::skip(keys().openai.empty())) {
     auto agent = AgentExecutor{
         OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{}
@@ -93,8 +92,7 @@ TEST_CASE("openai: basic chat") {
     CHECK(result.find("PONG") != std::string::npos);
 }
 
-TEST_CASE("openai: tool calling with schema validation") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("openai: tool calling with schema validation" * doctest::skip(keys().openai.empty())) {
     auto agent = AgentExecutor{
         OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{
@@ -111,8 +109,7 @@ TEST_CASE("openai: tool calling with schema validation") {
     CHECK(agent.run("What is 17 + 25?").find("42") != std::string::npos);
 }
 
-TEST_CASE("openai: multi-turn chat") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("openai: multi-turn chat" * doctest::skip(keys().openai.empty())) {
     auto agent = AgentExecutor{
         OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{.system_prompt = "You are a concise assistant."}
@@ -126,8 +123,7 @@ TEST_CASE("openai: multi-turn chat") {
     CHECK(agent.history().size() >= 4);
 }
 
-TEST_CASE("openai: generation parameters") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("openai: generation parameters" * doctest::skip(keys().openai.empty())) {
     auto llm = OpenAIChat{"gpt-4o-mini", LLMConfig{
         .api_key = keys().openai,
         .temperature = 0.0,
@@ -141,8 +137,7 @@ TEST_CASE("openai: generation parameters") {
 
 // ── Anthropic ───────────────────────────────────────────────────────────────
 
-TEST_CASE("anthropic: basic chat") {
-    REQUIRE_FALSE(keys().claude.empty());
+TEST_CASE("anthropic: basic chat" * doctest::skip(keys().claude.empty())) {
     auto agent = AgentExecutor{
         AnthropicChat{"claude-sonnet-4-20250514", keys().claude},
         AgentConfig{}
@@ -151,8 +146,7 @@ TEST_CASE("anthropic: basic chat") {
     CHECK(result.find("PONG") != std::string::npos);
 }
 
-TEST_CASE("anthropic: tool calling with schema validation") {
-    REQUIRE_FALSE(keys().claude.empty());
+TEST_CASE("anthropic: tool calling with schema validation" * doctest::skip(keys().claude.empty())) {
     auto agent = AgentExecutor{
         AnthropicChat{"claude-sonnet-4-20250514", keys().claude},
         AgentConfig{
@@ -171,8 +165,7 @@ TEST_CASE("anthropic: tool calling with schema validation") {
 
 // ── Gemini ──────────────────────────────────────────────────────────────────
 
-TEST_CASE("gemini: basic chat") {
-    REQUIRE_FALSE(keys().gemini.empty());
+TEST_CASE("gemini: basic chat" * doctest::skip(keys().gemini.empty())) {
     auto agent = AgentExecutor{
         GeminiChat{"gemini-2.0-flash", keys().gemini},
         AgentConfig{}
@@ -181,8 +174,7 @@ TEST_CASE("gemini: basic chat") {
     CHECK(result.find("PONG") != std::string::npos);
 }
 
-TEST_CASE("gemini: tool calling with schema validation") {
-    REQUIRE_FALSE(keys().gemini.empty());
+TEST_CASE("gemini: tool calling with schema validation" * doctest::skip(keys().gemini.empty())) {
     auto agent = AgentExecutor{
         GeminiChat{"gemini-2.0-flash", keys().gemini},
         AgentConfig{
@@ -201,8 +193,7 @@ TEST_CASE("gemini: tool calling with schema validation") {
 
 // ── Agent Behavior ──────────────────────────────────────────────────────────
 
-TEST_CASE("agent: tool error is handled gracefully") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("agent: tool error is handled gracefully" * doctest::skip(keys().openai.empty())) {
     auto agent = AgentExecutor{
         OpenAIChat{"gpt-4o-mini", keys().openai},
         AgentConfig{
@@ -218,8 +209,7 @@ TEST_CASE("agent: tool error is handled gracefully") {
     CHECK_FALSE(result.empty());
 }
 
-TEST_CASE("agent: AnyChat type erasure") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("agent: AnyChat type erasure" * doctest::skip(keys().openai.empty())) {
     AnyChat any{OpenAIChat{"gpt-4o-mini", keys().openai}};
     CHECK(any.model_name() == "gpt-4o-mini");
 
@@ -227,16 +217,14 @@ TEST_CASE("agent: AnyChat type erasure") {
     CHECK(resp.message.text().find("ERASED") != std::string::npos);
 }
 
-TEST_CASE("agent: AgentExecutor<deep_agent_tag, AnyChat> works") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("agent: AgentExecutor<deep_agent_tag, AnyChat> works" * doctest::skip(keys().openai.empty())) {
     AnyChat any{OpenAIChat{"gpt-4o-mini", keys().openai}};
     auto agent = AgentExecutor{std::move(any), AgentConfig{}};
     auto result = agent.run("Reply with exactly: DYNAMIC");
     CHECK(result.find("DYNAMIC") != std::string::npos);
 }
 
-TEST_CASE("agent: Log captures output at debug level") {
-    REQUIRE_FALSE(keys().openai.empty());
+TEST_CASE("agent: Log captures output at debug level" * doctest::skip(keys().openai.empty())) {
     std::ostringstream oss;
     auto agent = AgentExecutor{
         OpenAIChat{"gpt-4o-mini", keys().openai},
@@ -248,9 +236,8 @@ TEST_CASE("agent: Log captures output at debug level") {
     CHECK(oss.str().find("done") != std::string::npos);
 }
 
-TEST_CASE("agent: cross-provider sub-agent delegation") {
-    REQUIRE_FALSE(keys().openai.empty());
-    REQUIRE_FALSE(keys().gemini.empty());
+TEST_CASE("agent: cross-provider sub-agent delegation"
+          * doctest::skip(keys().openai.empty() || keys().gemini.empty())) {
 
     auto worker = make_shared_agent(
         GeminiChat{"gemini-2.0-flash", keys().gemini},

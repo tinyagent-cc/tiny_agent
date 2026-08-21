@@ -7,10 +7,69 @@
 
 #include "../core/model.hpp"
 #include "../core/tool.hpp"
+#include "../core/sse.hpp"
 
 namespace tiny_agent {
 
 struct Anthropic {};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  AnthropicStreamDecoder  —  translate Anthropic SSE into StreamEvents
+//
+//  Anthropic streams named events (message_start, content_block_start/delta/stop,
+//  message_delta, message_stop).  Tool-use ids arrive on content_block_start and
+//  are stashed by block index, then written back via restore_ids() (StreamEvent
+//  carries no id); tool arguments arrive as input_json_delta fragments.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+struct AnthropicStreamDecoder {
+    std::map<int, std::string> ids_;
+
+    void operator()(const sse::Event& ev, const StreamHandler& sink) {
+        json j;
+        try { j = json::parse(ev.data); } catch (...) { return; }
+        auto type = j.value("type", std::string{});
+
+        if (type == "message_start") {
+            sink(StreamEvent{StreamEvent::Kind::message_start});
+        } else if (type == "content_block_start") {
+            int idx = j.value("index", 0);
+            auto& cb = j["content_block"];
+            if (cb.value("type", std::string{}) == "tool_use") {
+                if (cb.contains("id") && !cb["id"].is_null())
+                    ids_[idx] = cb["id"].get<std::string>();
+                StreamEvent s{StreamEvent::Kind::tool_call_delta};
+                s.tool_index = idx;
+                s.tool_name  = cb.value("name", std::string{});
+                sink(s);
+            }
+        } else if (type == "content_block_delta") {
+            int idx  = j.value("index", 0);
+            auto& d  = j["delta"];
+            auto dt  = d.value("type", std::string{});
+            if (dt == "text_delta") {
+                StreamEvent s{StreamEvent::Kind::text_delta};
+                s.text = d.value("text", std::string{});
+                sink(s);
+            } else if (dt == "input_json_delta") {
+                StreamEvent s{StreamEvent::Kind::tool_call_delta};
+                s.tool_index = idx;
+                s.tool_args  = d.value("partial_json", std::string{});
+                sink(s);
+            }
+        } else if (type == "message_delta") {
+            if (j.contains("delta") && j["delta"].contains("stop_reason")
+                && !j["delta"]["stop_reason"].is_null()) {
+                StreamEvent s{StreamEvent::Kind::finish};
+                s.finish_reason = j["delta"]["stop_reason"].get<std::string>();
+                sink(s);
+            }
+        }
+        // content_block_stop and message_stop carry nothing we accumulate.
+    }
+
+    void restore_ids(LLMResponse& r) const { detail::restore_tool_ids(r, ids_); }
+};
 
 template<> class LLMModel<Anthropic, chat_tag>;
 
@@ -219,6 +278,57 @@ public:
         return response;
     }
 
+    // ── Streaming chat (is_streaming_chat) ──────────────────────────────────
+
+    LLMResponse chat_stream(const std::vector<Message>& msgs,
+                            const std::vector<ToolSchema>& tools,
+                            const StreamHandler& on_event) {
+        auto& log = config_.log;
+        log.debug("llm", "anthropic chat_stream (model=" + model_
+            + " messages=" + std::to_string(msgs.size())
+            + " tools=" + std::to_string(tools.size()) + ")");
+
+        auto body = build_request(msgs, tools);
+        body["stream"] = true;
+        std::string path = "/v1/messages";
+        log.trace("llm", "POST (stream) " + path);
+
+        sse::Parser            parser;
+        AnthropicStreamDecoder decoder;
+        StreamAccumulator      acc;
+        auto sink   = [&](const StreamEvent& e) { acc.push(e); on_event(e); };
+        auto on_sse = [&](sse::Event ev) { decoder(ev, sink); };
+
+        std::string raw;
+        auto receiver = [&](const char* data, std::size_t len) -> bool {
+            raw.append(data, len);
+            parser.feed(std::string_view(data, len), on_sse);
+            return true;
+        };
+
+        auto res = client_.Post(path, httplib::Headers{}, body.dump(),
+                                "application/json", receiver);
+        if (!res) {
+            auto err = "HTTP request failed: " + httplib::to_string(res.error());
+            log.error("llm", err);
+            throw APIError(0, err);
+        }
+        if (res->status != 200) {
+            log.error("llm", "anthropic API error (status="
+                + std::to_string(res->status) + "): " + raw);
+            throw APIError(res->status, "anthropic API error: " + raw);
+        }
+
+        parser.finish(on_sse);
+        auto response = acc.result();
+        decoder.restore_ids(response);
+        response.raw = raw;  // the concatenated SSE text (not a single JSON doc)
+
+        log.debug("llm", "finish_reason=" + response.finish_reason
+            + " tool_calls=" + std::to_string(response.message.tool_calls.size()));
+        return response;
+    }
+
     std::vector<std::string> batch(std::vector<std::string> prompts, const RunConfig& cfg = {}) {
         std::vector<std::string> out;
         out.reserve(prompts.size());
@@ -226,8 +336,11 @@ public:
         return out;
     }
 
-    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(prompt), cfg));
+    void stream(std::string prompt, std::function<void(std::string)> cb, const RunConfig& = {}) {
+        std::vector<Message> msgs = {Message::user(std::move(prompt))};
+        chat_stream(msgs, {}, [&](const StreamEvent& e) {
+            if (e.kind == StreamEvent::Kind::text_delta) cb(e.text);
+        });
     }
 
     const LLMConfig& config() const { return config_; }
@@ -235,6 +348,7 @@ public:
 
 using AnthropicChat = LLMModel<Anthropic, chat_tag>;
 
-static_assert(is_chat<AnthropicChat>, "AnthropicChat must satisfy is_chat");
+static_assert(is_chat<AnthropicChat>,           "AnthropicChat must satisfy is_chat");
+static_assert(is_streaming_chat<AnthropicChat>, "AnthropicChat must satisfy is_streaming_chat");
 
 } // namespace tiny_agent

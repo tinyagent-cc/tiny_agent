@@ -12,6 +12,7 @@ set(EXAMPLES
     11_skills
     12_mcp_http
     13_embeddings_retriever
+    14_streaming
 )
 
 foreach(ex ${EXAMPLES})

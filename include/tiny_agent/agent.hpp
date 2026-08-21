@@ -65,6 +65,36 @@ class AgentExecutor<deep_agent_tag, LLMType>
         return chain_.run(msgs, terminal);
     }
 
+    // Streaming counterpart of call_llm: streams the model call when the model
+    // satisfies is_streaming_chat, otherwise falls back to a single chat() and
+    // replays the final text as one text_delta so the handler still sees output.
+    // Middleware still wraps the call in both cases.
+    LLMResponse call_llm_stream(std::vector<Message>& msgs, const StreamHandler& on_event) {
+        auto schemas = registry_.schemas();
+        log_.trace(cfg_.name, "streaming " + std::to_string(msgs.size())
+            + " messages with " + std::to_string(schemas.size()) + " tool schemas");
+        auto terminal = [this, &schemas, &on_event](std::vector<Message>& m) -> LLMResponse {
+            if constexpr (is_streaming_chat<LLMType>) {
+                return llm_.chat_stream(m, schemas, on_event);
+            } else {
+                // Fallback: one chat() call, replayed as text_delta + finish so
+                // the handler sees the same "deltas then finish" shape per turn.
+                auto resp = llm_.chat(m, schemas);
+                if (!resp.message.text().empty()) {
+                    StreamEvent s{StreamEvent::Kind::text_delta};
+                    s.text = resp.message.text();
+                    on_event(s);
+                }
+                on_event(StreamEvent{StreamEvent::Kind::finish, "", -1, "", "",
+                                     resp.finish_reason});
+                return resp;
+            }
+        };
+        if (chain_.empty()) return terminal(msgs);
+        log_.trace(cfg_.name, "running through middleware chain");
+        return chain_.run(msgs, terminal);
+    }
+
     std::vector<Message> execute_tools(const std::vector<ToolCall>& calls) {
         std::vector<Message> results;
         for (auto& tc : calls) {
@@ -133,6 +163,39 @@ public:
             + std::to_string(cfg_.max_iterations) + ") without producing a final response.";
     }
 
+    // ── Streaming core loop ───────────────────────────────────────────────
+    //
+    // Identical control flow to execute_loop, but each model call streams:
+    // text deltas and tool-call deltas flow to on_event live across every
+    // iteration.  Each streamed call still returns a full LLMResponse, so the
+    // loop logic (tool dispatch, termination) is unchanged.
+
+    std::string execute_loop_stream(std::vector<Message>& msgs,
+                                    const StreamHandler& on_event,
+                                    const char* label = "run_stream") {
+        for (int i = 0; i < cfg_.max_iterations; ++i) {
+            log_.debug(cfg_.name, std::string(label) + " iteration " + std::to_string(i + 1)
+                + "/" + std::to_string(cfg_.max_iterations)
+                + " (messages=" + std::to_string(msgs.size()) + ")");
+            auto resp = call_llm_stream(msgs, on_event);
+            msgs.push_back(resp.message);
+
+            if (!resp.message.has_tool_calls()) {
+                log_.debug(cfg_.name, "done: " + resp.finish_reason);
+                return resp.message.text();
+            }
+
+            log_.debug(cfg_.name, "LLM requested " + std::to_string(resp.message.tool_calls.size()) + " tool call(s)");
+            auto tool_results = execute_tools(resp.message.tool_calls);
+            for (auto& tr : tool_results)
+                msgs.push_back(std::move(tr));
+        }
+        log_.warn(cfg_.name, std::string(label) + " reached max iterations ("
+            + std::to_string(cfg_.max_iterations) + ")");
+        return "Error: agent reached maximum iterations ("
+            + std::to_string(cfg_.max_iterations) + ") without producing a final response.";
+    }
+
     // ── Single-shot execution ─────────────────────────────────────────────
 
     std::string run(const std::string& input) {
@@ -147,6 +210,21 @@ public:
 
     std::string run(std::vector<Message> msgs) {
         return execute_loop(msgs);
+    }
+
+    // ── Streaming single-shot ─────────────────────────────────────────────
+    //
+    // Runs the full ReAct loop, streaming every model turn's deltas to
+    // on_event, and returns the final text (identical to run()).
+
+    std::string run_stream(const std::string& input, const StreamHandler& on_event) {
+        log_.debug(cfg_.name, "run_stream(\"" + input.substr(0, 120)
+            + (input.size() > 120 ? "..." : "") + "\")");
+        std::vector<Message> msgs;
+        if (!cfg_.system_prompt.empty())
+            msgs.push_back(Message::system(cfg_.system_prompt));
+        msgs.push_back(Message::user(input));
+        return execute_loop_stream(msgs, on_event, "run_stream");
     }
 
     // ── Parsed single-shot ────────────────────────────────────────────────
@@ -167,6 +245,17 @@ public:
             history_.push_back(Message::system(cfg_.system_prompt));
         history_.push_back(Message::user(input));
         return execute_loop(history_, "chat");
+    }
+
+    // ── Streaming multi-turn chat ─────────────────────────────────────────
+
+    std::string chat_stream(const std::string& input, const StreamHandler& on_event) {
+        log_.debug(cfg_.name, "chat_stream(\"" + input.substr(0, 120)
+            + (input.size() > 120 ? "..." : "") + "\")");
+        if (history_.empty() && !cfg_.system_prompt.empty())
+            history_.push_back(Message::system(cfg_.system_prompt));
+        history_.push_back(Message::user(input));
+        return execute_loop_stream(history_, on_event, "chat_stream");
     }
 
     // ── Tool management ───────────────────────────────────────────────────
@@ -216,8 +305,10 @@ public:
         return out;
     }
 
-    void stream(std::string input, std::function<void(std::string)> cb, const RunConfig& cfg = {}) {
-        cb(invoke(std::move(input), cfg));
+    void stream(std::string input, std::function<void(std::string)> cb, const RunConfig& = {}) {
+        run_stream(input, [&](const StreamEvent& e) {
+            if (e.kind == StreamEvent::Kind::text_delta) cb(e.text);
+        });
     }
 
     void clear_history() { history_.clear(); }
