@@ -129,7 +129,7 @@ builds one at runtime. `Runnable` composes models, agents and plain lambdas with
 - **[Agent Skills](https://agentskills.io)** (`SKILL.md`) loading, which no other C++ framework does
 - **True SSE streaming**, tool-call deltas included, on the OpenAI-compatible and Anthropic paths
 - **[Tracing](docs/observability.md)** to Arize Phoenix, Langfuse, or any OTLP collector, with no vendor SDK
-- **[Vector stores](docs/vector-stores.md)**: in-process, hnswlib, Qdrant, Chroma, Redis, behind one four-method concept
+- **[Vector stores](docs/vector-stores.md)**: in-process, hnswlib, Qdrant, Chroma, Weaviate, Redis, behind one four-method concept
 - **[Context management](docs/context-management.md)** against an explicit token budget
 - Multimodal messages, embeddings, batch, an agent-skills registry
 
@@ -265,10 +265,37 @@ add_subdirectory(external/tiny_agent_cpp)
 target_link_libraries(my_app PRIVATE tiny_agent)
 ```
 
-There is no installed CMake package yet, so `add_subdirectory` is the path.
 Build options: `TINY_AGENT_BUILD_EXAMPLES`, `TINY_AGENT_BUILD_TESTS`,
 `TINY_AGENT_BUILD_BENCH` (all `ON`), and `TINY_AGENT_HNSWLIB` (`OFF`) for the
-hnswlib vector store.
+hnswlib vector store. Set these `OFF` for a vendored build; a consumer does not
+need the examples, tests, or benchmarks.
+
+Or install it and `find_package`:
+
+```bash
+cmake --preset default -DTINY_AGENT_BUILD_EXAMPLES=OFF -DTINY_AGENT_BUILD_TESTS=OFF -DTINY_AGENT_BUILD_BENCH=OFF
+cmake --build --preset default
+cmake --install build --prefix /path/to/prefix
+```
+
+```cmake
+find_package(tiny_agent CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE tiny_agent::tiny_agent)
+```
+
+Point CMake at the prefix with `-DCMAKE_PREFIX_PATH=/path/to/prefix` if it is
+not a system location.
+
+**vcpkg, before this port is in the public registry.** `ports/tiny-agent` in
+this repo is a working port; use it as an overlay until it upstreams:
+
+```bash
+vcpkg install tiny-agent --overlay-ports=/path/to/tiny_agent_cpp/ports/tiny-agent
+```
+
+or in a manifest project, add an `"overlay-ports"` entry to
+`vcpkg-configuration.json` pointing at that directory and depend on
+`tiny-agent` from `vcpkg.json` as usual.
 
 ## Examples
 
@@ -301,7 +328,7 @@ takes the server command on the command line and needs Node:
 ctest --preset default          # add -C Debug on multi-config generators
 ```
 
-330 offline doctest cases across 20 files, no network and no keys required.
+352 offline doctest cases across 21 files, no network and no keys required.
 `test_agent` is the twenty-first and calls real providers; it needs API keys and
 is the only one that will fail without them.
 
@@ -311,13 +338,14 @@ Tests that need a service skip themselves unless it is configured:
 PHOENIX_BASE_URL=http://localhost:6006 ctest --preset default -R test_tracing
 QDRANT_URL=http://localhost:6333 CHROMA_URL=http://localhost:8000 \
   ctest --preset default -R test_vectorstore_remote
+WEAVIATE_URL=http://localhost:8080 ctest --preset default -R test_vs_weaviate
 REDIS_URL=redis://localhost:6379 ctest --preset default -R test_vs_redis
 ```
 
 ## Docs
 
 - [Observability](docs/observability.md): tracing, exporters, Phoenix, Langfuse
-- [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma, Redis
+- [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma, Weaviate, Redis
 - [Context management](docs/context-management.md): token budgets and compaction
 - [Benchmarks](docs/benchmarks.md): binary size, RSS, time to first token
 - [Direction](docs/direction-2026-08.md): where this is going and why

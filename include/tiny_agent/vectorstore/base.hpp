@@ -1,11 +1,48 @@
 #pragma once
 #include "../core/types.hpp"
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 #include <concepts>
 
 namespace tiny_agent {
+
+namespace detail {
+
+// Deterministic 128-bit digest of a string, rendered in UUID form. Not a real
+// RFC 4122 v5 (no SHA-1, no namespace), but the backends that need this only
+// require a parseable UUID, and the same input always yields the same id so
+// re-adding a document updates it rather than duplicating it.
+//
+// Qdrant and Weaviate both reject free-form string ids, and every store here
+// takes one, so both adapters hash the caller's id through this and keep the
+// original in the payload. It lives in base.hpp because two stores share it.
+inline std::string uuid_from_string(const std::string& s) {
+    std::uint64_t h1 = 0xcbf29ce484222325ULL;
+    std::uint64_t h2 = 0x9e3779b97f4a7c15ULL;
+    for (unsigned char c : s) {
+        h1 = (h1 ^ c) * 0x100000001b3ULL;
+        h2 = (h2 + c) * 0xff51afd7ed558ccdULL;
+        h2 ^= h2 >> 33;
+    }
+    if (h1 == 0) h1 = 0x1ULL;   // never emit the nil UUID
+
+    auto hex = [](std::uint64_t v, int digits) {
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::string out(static_cast<std::size_t>(digits), '0');
+        for (int i = digits - 1; i >= 0; --i) { out[static_cast<std::size_t>(i)] = kHex[v & 0xF]; v >>= 4; }
+        return out;
+    };
+
+    auto a = hex(h1, 16);   // 8-4-4 comes out of the first half
+    auto b = hex(h2, 16);   // 4-12 out of the second
+    // Version 4 and the RFC variant bits, so the value parses as a normal UUID.
+    return a.substr(0, 8) + "-" + a.substr(8, 4) + "-4" + a.substr(13, 3)
+         + "-a" + b.substr(1, 3) + "-" + b.substr(4, 12);
+}
+
+} // namespace detail
 
 // ── Document & search result ─────────────────────────────────────────────────
 

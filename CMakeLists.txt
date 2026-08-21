@@ -30,6 +30,38 @@ if(TINY_AGENT_HNSWLIB)
     target_compile_definitions(tiny_agent INTERFACE TINY_AGENT_HAS_HNSWLIB)
 endif()
 
+# --- Install: headers, target, and a find_package(tiny_agent CONFIG) config ---
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(TARGETS tiny_agent EXPORT tiny_agentTargets)
+install(DIRECTORY include/tiny_agent DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/tiny_agent)
+
+set(TINY_AGENT_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/tiny_agent)
+
+install(EXPORT tiny_agentTargets
+    FILE tiny_agentTargets.cmake
+    NAMESPACE tiny_agent::
+    DESTINATION ${TINY_AGENT_CMAKE_DIR}
+)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/tiny_agentConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/tiny_agentConfig.cmake
+    INSTALL_DESTINATION ${TINY_AGENT_CMAKE_DIR}
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/tiny_agentConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/tiny_agentConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/tiny_agentConfigVersion.cmake
+    DESTINATION ${TINY_AGENT_CMAKE_DIR}
+)
+
 # --- Subdirectories ---
 option(TINY_AGENT_BUILD_EXAMPLES "Build examples" ON)
 option(TINY_AGENT_BUILD_TESTS    "Build tests"    ON)

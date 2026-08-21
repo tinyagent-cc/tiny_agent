@@ -1,13 +1,15 @@
 // 19_vector_store — retrieval over a pluggable vector store
 //
 // The same Retriever code runs against an in-process store, a Qdrant server, a
-// Chroma server or a Redis. Which one is a config decision, not a code change:
-// swap the store type, or pick it at runtime with AnyVectorStore as this
+// Chroma server, a Weaviate server or a Redis. Which one is a config decision,
+// not a code change: swap the store type, or pick it at runtime with
+// AnyVectorStore as this
 // example does.
 //
 //   ./build/examples/19_vector_store                          # in-memory
 //   QDRANT_URL=http://localhost:6333 ./build/examples/19_vector_store
 //   CHROMA_URL=http://localhost:8000 ./build/examples/19_vector_store
+//   WEAVIATE_URL=http://localhost:8080 ./build/examples/19_vector_store
 //   REDIS_URL=redis://localhost:6379 ./build/examples/19_vector_store
 //
 // Set OPENAI_API_KEY to use real embeddings; without it the example uses a
@@ -17,6 +19,7 @@
 #include <tiny_agent/vectorstore/chroma.hpp>
 #include <tiny_agent/vectorstore/qdrant.hpp>
 #include <tiny_agent/vectorstore/redis.hpp>
+#include <tiny_agent/vectorstore/weaviate.hpp>
 #include <tiny_agent/providers/openai.hpp>
 #include <cstdlib>
 #include <iomanip>
@@ -100,9 +103,10 @@ static void demo(Store store, const char* label) {
 }
 
 int main() {
-    const char* qdrant = std::getenv("QDRANT_URL");
-    const char* chroma = std::getenv("CHROMA_URL");
-    const char* redis  = std::getenv("REDIS_URL");
+    const char* qdrant   = std::getenv("QDRANT_URL");
+    const char* chroma   = std::getenv("CHROMA_URL");
+    const char* weaviate = std::getenv("WEAVIATE_URL");
+    const char* redis    = std::getenv("REDIS_URL");
 
     try {
         demo(FlatVectorStore{}, "FlatVectorStore (in-process)");
@@ -112,6 +116,9 @@ int main() {
 
         if (chroma) demo(ChromaVectorStore{chroma, "tiny_agent_example"}, "Chroma");
         else        std::cout << "set CHROMA_URL to run the Chroma backend\n";
+
+        if (weaviate) demo(WeaviateVectorStore{weaviate, "tiny_agent_example"}, "Weaviate");
+        else          std::cout << "set WEAVIATE_URL to run the Weaviate backend\n";
 
         if (redis) demo(RedisVectorStore{redis, "tiny_agent_example"}, "Redis");
         else       std::cout << "set REDIS_URL to run the Redis backend\n";
