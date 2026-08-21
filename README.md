@@ -129,7 +129,7 @@ builds one at runtime. `Runnable` composes models, agents and plain lambdas with
 - **[Agent Skills](https://agentskills.io)** (`SKILL.md`) loading, which no other C++ framework does
 - **True SSE streaming**, tool-call deltas included, on the OpenAI-compatible and Anthropic paths
 - **[Tracing](docs/observability.md)** to Arize Phoenix, Langfuse, or any OTLP collector, with no vendor SDK
-- **[Vector stores](docs/vector-stores.md)**: in-process, hnswlib, Qdrant, Chroma, behind one four-method concept
+- **[Vector stores](docs/vector-stores.md)**: in-process, hnswlib, Qdrant, Chroma, Redis, behind one four-method concept
 - **[Context management](docs/context-management.md)** against an explicit token budget
 - Multimodal messages, embeddings, batch, an agent-skills registry
 
@@ -301,8 +301,8 @@ takes the server command on the command line and needs Node:
 ctest --preset default          # add -C Debug on multi-config generators
 ```
 
-301 offline doctest cases across 19 files, no network and no keys required.
-`test_agent` is the twentieth and calls real providers; it needs API keys and
+330 offline doctest cases across 20 files, no network and no keys required.
+`test_agent` is the twenty-first and calls real providers; it needs API keys and
 is the only one that will fail without them.
 
 Tests that need a service skip themselves unless it is configured:
@@ -311,12 +311,13 @@ Tests that need a service skip themselves unless it is configured:
 PHOENIX_BASE_URL=http://localhost:6006 ctest --preset default -R test_tracing
 QDRANT_URL=http://localhost:6333 CHROMA_URL=http://localhost:8000 \
   ctest --preset default -R test_vectorstore_remote
+REDIS_URL=redis://localhost:6379 ctest --preset default -R test_vs_redis
 ```
 
 ## Docs
 
 - [Observability](docs/observability.md): tracing, exporters, Phoenix, Langfuse
-- [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma
+- [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma, Redis
 - [Context management](docs/context-management.md): token budgets and compaction
 - [Benchmarks](docs/benchmarks.md): binary size, RSS, time to first token
 - [Direction](docs/direction-2026-08.md): where this is going and why
