@@ -1,4 +1,25 @@
 #pragma once
+// ═══════════════════════════════════════════════════════════════════════════════
+//  retriever.hpp  —  the retrieval entry point
+//
+//  Including this gives you the whole vector-store interface:
+//
+//    vector_store        the concept — add, search, size, clear. Four methods,
+//                        and anything satisfying them plugs in
+//    Document            id, content, embedding, metadata
+//    SearchResult        id, content, score (higher is closer), metadata
+//    FlatVectorStore     in-process brute force, no dependencies
+//    AnyVectorStore      the same interface with the backend chosen at runtime
+//    Retriever           an embeddings model plus a store, exposable as a tool
+//
+//  Server-backed stores are separate opt-in headers, since each one is a
+//  running service you have to have:
+//
+//    #include <tiny_agent/vectorstore/qdrant.hpp>    // Qdrant over REST
+//    #include <tiny_agent/vectorstore/chroma.hpp>    // Chroma over REST
+//    #include <tiny_agent/vectorstore/hnswlib.hpp>   // in-process ANN, needs hnswlib
+// ═══════════════════════════════════════════════════════════════════════════════
+
 #include "core/model.hpp"
 #include "vectorstore/base.hpp"
 #include "vectorstore/flat.hpp"
