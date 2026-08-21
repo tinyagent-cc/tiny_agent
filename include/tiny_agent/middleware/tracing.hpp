@@ -39,7 +39,7 @@ struct TracingConfig {
 namespace detail {
 
 inline std::string clip(std::string s, std::size_t max) {
-    if (s.size() > max) { s.resize(max); s += "…"; }
+    if (s.size() > max) { s.resize(max); s += "..."; }
     return s;
 }
 

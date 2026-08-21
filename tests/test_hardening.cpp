@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 #include <tiny_agent/tiny_agent.hpp>
 #include "mock_model.hpp"
+#include <algorithm>
 
 using namespace tiny_agent;
 using tiny_agent::test::MockChat;

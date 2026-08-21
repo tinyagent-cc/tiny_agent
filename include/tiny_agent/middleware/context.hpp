@@ -32,6 +32,7 @@
 #include "../core/middleware.hpp"
 #include "../core/log.hpp"
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 
 namespace tiny_agent::middleware {

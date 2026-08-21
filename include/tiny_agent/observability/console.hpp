@@ -10,6 +10,8 @@
 #include "trace.hpp"
 #include <iomanip>
 #include <iostream>
+#include <functional>
+#include <mutex>
 #include <ostream>
 
 namespace tiny_agent::obs {
@@ -37,7 +39,7 @@ class StreamExporter final : public Exporter {
 
     std::string clip(const std::string& s) const {
         if (s.size() <= cfg_.max_content_chars) return s;
-        return s.substr(0, cfg_.max_content_chars) + "…";
+        return s.substr(0, cfg_.max_content_chars) + "...";
     }
 
 public:
