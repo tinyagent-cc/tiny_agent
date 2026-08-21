@@ -1,16 +1,18 @@
 set(MW_EXAMPLES
-    logging
     system_prompt
     pii_protection
     trim_history
     summarize
     call_limits
     context_editing
-    rationalize
     retry_and_fallback
     custom_middleware
-    full_stack
 )
+
+# These examples shell out through popen/pclose, which is POSIX-only.
+if(NOT WIN32)
+    list(APPEND MW_EXAMPLES logging rationalize full_stack)
+endif()
 
 foreach(ex ${MW_EXAMPLES})
     add_executable(mw_${ex} ${ex}.cpp)

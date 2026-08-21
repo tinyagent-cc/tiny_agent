@@ -26,7 +26,11 @@ static void load_dotenv(const std::string& path) {
         auto val = line.substr(pos + 1);
         while (!val.empty() && std::isspace(static_cast<unsigned char>(val.back())))
             val.pop_back();
+#ifdef _WIN32
+        if (!std::getenv(key.c_str())) _putenv_s(key.c_str(), val.c_str());
+#else
         setenv(key.c_str(), val.c_str(), 0);
+#endif
     }
 }
 
