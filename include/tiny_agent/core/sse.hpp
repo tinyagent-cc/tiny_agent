@@ -8,7 +8,7 @@
 //  "[DONE]" sentinel) is entirely the caller's job.
 //
 //  Follows the WHATWG event-stream rules: fields split mid-line across chunks,
-//  multiple events per chunk, "\n"/"\r\n"/"\r" line endings, multi-line "data:"
+//  multiple events per chunk, "\n" and "\r\n" line endings, multi-line "data:"
 //  fields joined with newlines, comment lines (":" prefix) ignored, and a
 //  trailing unterminated event flushed via finish().
 // ═══════════════════════════════════════════════════════════════════════════════
