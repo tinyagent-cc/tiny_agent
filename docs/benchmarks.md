@@ -64,6 +64,87 @@ Full commands, raw build/test/bench output, and the on-device git bootstrap (the
 
 </details>
 
+## NVIDIA Jetson Orin Nano Super (8GB, aarch64, CUDA), 2026-08-21
+
+First port to the Jetson, on the same `4c8eeea` v0.4 merge as the Pi 5 run above, with
+the same model and quantization, so the two sections compare directly.
+
+Hardware: Jetson Orin Nano Engineering Reference Developer Kit Super, 6 cores
+(Cortex-A78AE at 1.73 GHz), 7.4GB LPDDR5 shared between CPU and GPU, Ampere GA10B GPU
+at compute capability 8.7, `nvpmodel` MAXN_SUPER.
+Toolchain: JetPack 6.2 (L4T R36.5.0, kernel 5.15.185-tegra, Ubuntu 22.04.5), g++ 11.4.0,
+cmake 3.31.6 and vcpkg 2026-07-27 user-local under `~/tools`, CUDA 12.6.68 from the
+NVIDIA Jetson apt repo (root needed for that one, nothing else).
+Stack: llama.cpp `873e5d8` built from source with `GGML_CUDA=ON`, Qwen2.5-3B-Instruct Q4_K_M.
+
+| Metric | Value |
+|---|---|
+| First-time `cmake --preset release` (all five vcpkg deps from source, OpenSSL included) | 245 s |
+| Clean full Release build (6 threads, deps already built) | 524 s (8.7 min) |
+| `bench_agent` binary, Release, stripped | 7.7 MB |
+| `17_streaming` binary, Release, stripped | 7.6 MB |
+| `17_streaming` client peak RSS during a streamed response | 5.1 MB |
+| Model generation speed, GPU, all 36 layers offloaded | 23.85 tok/s |
+| Prompt eval speed, GPU | 874.77 tok/s |
+| Model generation speed, CPU only, 6 threads | 12.75 tok/s |
+| Prompt eval speed, CPU only | 40.39 tok/s |
+| Offline `ctest` suite on the Jetson | 20/20 pass, 0.16 s |
+
+The GPU is worth 1.9x on generation and 22x on prompt eval over the same board's CPU, and
+4.4x on generation over the Pi 5 above. Prompt eval is where the gap really opens, which
+matters for agent work: every tool result and every middleware-injected message is prompt
+tokens the model has to re-read.
+
+`-ngl 0` is not a CPU measurement here. With a CUDA backend loaded, llama.cpp still offloads
+the large prompt matmuls and reports 598 tok/s on `pp512`. The CPU rows above use `-dev none`.
+
+The client footprint does not depend on the backend. Peak RSS was 5.0-5.2 MB across five
+runs, GPU-backed at 23 tok/s and CPU-backed at 9 tok/s alike, and a 1153-char response cost
+the same as an 1820-char one. That is 5.1 MB against 2.0 MB for the Pi 5 on identical source,
+measured the same way (`VmHWM` polled over the process lifetime). The difference is the
+toolchain, not the workload: Ubuntu 22.04 with glibc 2.35 and g++ 11.4 here, Debian 13 with
+g++ 14.2 on the Pi. Same story in the agent benchmarks below, where the Pi's older, slower
+silicon still posts better numbers than this board on several rows. If you are size- or
+latency-sensitive on a Jetson, a newer toolchain than the one JetPack 6.2 ships is worth
+having.
+
+One example does not compile on g++ 11.4. `16_deep_agent_custom.cpp` calls
+`init_chat_model("openai:gpt-4o-mini", {.api_key = key})`, and g++ 11 keeps both the
+two-argument and three-argument overloads in the candidate set when the second argument is a
+braced initializer, then cannot choose. Clang and newer GCC discard the wrong candidate. The
+other 52 targets, the whole test suite and the bench build clean; the failure is recorded
+rather than patched, since the fix belongs in a code change.
+
+Full commands, raw build/test/bench output, the CUDA bring-up and the RSS methodology are in
+[`docs/proofs/jetson-bench.md`](proofs/jetson-bench.md).
+
+<details>
+<summary>Raw bench_agent summary block</summary>
+
+```
+╔═══════════════════════════════════════════════════════════════╗
+║  SUMMARY — Key Numbers for Constrained Environments          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+  Tool lookup (20 tools)                                128 ns  (7.3M ops/s)
+  Tool execute (arithmetic)                             544 ns  (1.8M ops/s)
+  Middleware chain (5 deep)                             704 ns  (1.4M ops/s)
+  Static chain (5 deep)                                  96 ns  (10.7M ops/s)
+  LRU<128> get (cache hit)                               96 ns  (8.9M ops/s)
+  Cached tool (hit)                                     1.6 us  (606.4K ops/s)
+  Agent run (no tools)                                  1.8 us  (551.7K ops/s)
+  Agent run (full stack)                                10.5 us  (95.1K ops/s)
+  GPIO monitor cycle                                    8.0 us  (125.0K ops/s)
+  Embedded production agent                              9.9 us  (101.0K ops/s)
+  json::parse (sensor payload)                           8.0 us  (124.1K ops/s)
+
+  Static vs Runtime middleware (depth=5): 7.3x speedup
+  Static vs Runtime middleware (depth=10): 25.0x speedup
+  Cached vs uncached tool overhead: 3.4x
+```
+
+</details>
+
 ## macOS arm64 (M-series), 2026-08-21
 
 | Metric | Value |
