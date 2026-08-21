@@ -40,6 +40,7 @@ get the batch path where it exists and a loop where it does not.
 | `ChromaVectorStore` | `vectorstore/chroma.hpp` | a running Chroma |
 | `WeaviateVectorStore` | `vectorstore/weaviate.hpp` | a running Weaviate |
 | `RedisVectorStore` | `vectorstore/redis.hpp` | a Redis with the search module |
+| `MilvusVectorStore` | `vectorstore/milvus.hpp` | a running Milvus |
 | `AnyVectorStore` | `retriever.hpp` | nothing, wraps any of the above |
 
 `FlatVectorStore` is an O(n) scan. It is the right choice up to a few thousand
@@ -249,6 +250,63 @@ locally. `clear()` deletes the documents by `SCAN` and `DEL` and then drops the
 index, so it also cleans up hashes left behind by an index that was never
 created; the next write recreates both.
 
+## Milvus
+
+```cpp
+#include <tiny_agent/vectorstore/milvus.hpp>
+
+MilvusVectorStore store{"http://localhost:19530", "my_docs",
+                        MilvusConfig{.token = "…", .metric_type = "COSINE"}};
+```
+
+REST only, no SDK and no gRPC. Milvus multiplexes both onto port 19530 and serves
+the v2 API under `/v2/vectordb`; port 9091 answers `/healthz` and nothing else.
+
+**Ids are your own.** The primary key is declared `VarChar`, so the id you write
+is the id Milvus holds and the id `search()` gives back. Qdrant and Weaviate
+accept only UUIDs and their adapters hash around that; this one has nothing to
+hash. The collection is created on the first write with the schema spelled out,
+because Milvus's quick setup gives an `Int64` key and the `Bounded` consistency
+level. The adapter asks for `Strong`, so a search issued right after a write sees
+it.
+
+**Writes go to `/entities/upsert`, not `/entities/insert`.** Insert does not look
+at the primary key. Write `doc_a` twice and you have two rows, so re-indexing a
+corpus doubles it and searches start returning both versions. Upsert replaces.
+
+**Reads need the collection loaded.** A Milvus collection answers nothing until
+it is in memory, and the load that follows creation is asynchronous, so a search
+fired straight after the first write comes back `collection not loaded`. Both
+reads wait for the load first and cache the result. Writes need no such thing,
+which is why the failure only ever shows up on the read side. Nothing in Qdrant,
+Chroma or Weaviate has an equivalent state.
+
+**`size()` runs a `count(*)` query.** `/collections/get_stats` looks like the
+call for this and gives the wrong answer: it counts sealed segments, so a
+collection whose rows are still in memory reports zero. A collection that does
+not exist counts as empty.
+
+**Every failure arrives as HTTP 200** with a non-zero `code` in the body, on
+every endpoint rather than just the batch path Weaviate has. Reading the status
+alone turns a dimension mismatch into a silent success, so each call checks the
+body and throws with the server's message.
+
+**The metric is already a similarity.** Chroma and Weaviate report a distance and
+their adapters return `1 - distance`. Under COSINE, the number Milvus labels
+`distance` is the cosine similarity itself, and inverting it would reverse the
+ranking, so it passes through untouched. `L2` is a real distance and gets
+negated, which keeps the ordering exact.
+
+**Metadata** is a JSON field, so nested objects and arrays come back as the value
+you put in rather than flattened the way Chroma needs. The REST response
+serialises the field to text and the adapter parses it back.
+
+`clear()` drops the collection, and dropping one that is not there succeeds. The
+next write recreates it.
+
+`docs/proofs/milvus.md` has the probes those decisions came from, run against
+`milvusdb/milvus:latest` at Milvus 3.0.0.
+
 ## Picking a backend at runtime
 
 The concept resolves at compile time, which is what you want when the backend is
@@ -268,13 +326,14 @@ unchanged.
 ## Writing an adapter
 
 Implement the four methods against whatever you have. If it is an HTTP service,
-`vectorstore/qdrant.hpp`, `vectorstore/chroma.hpp` and `vectorstore/weaviate.hpp`
-are the pattern to copy: keep an `httplib::Client`, and factor the request body
-and response parsing into static pure functions so the wire format is testable
-without a server. That is what lets `tests/test_vectorstore_remote.cpp` and
-`tests/test_vs_weaviate.cpp` cover the adapters offline and run the same
-round-trip against a live server when `QDRANT_URL`, `CHROMA_URL` or
-`WEAVIATE_URL` is set.
+`vectorstore/qdrant.hpp`, `vectorstore/chroma.hpp`, `vectorstore/weaviate.hpp`
+and `vectorstore/milvus.hpp` are the pattern to copy: keep an `httplib::Client`,
+and factor the request body and response parsing into static pure functions so
+the wire format is testable without a server. That is what lets
+`tests/test_vectorstore_remote.cpp`, `tests/test_vs_weaviate.cpp` and
+`tests/test_vs_milvus.cpp` cover the adapters offline and run the same
+round-trip against a live server when `QDRANT_URL`, `CHROMA_URL`,
+`WEAVIATE_URL` or `MILVUS_URL` is set.
 
 If it is not a REST service, `vectorstore/redis.hpp` is the pattern: the same
 static pure functions for wire format and reply parsing, plus a small protocol
