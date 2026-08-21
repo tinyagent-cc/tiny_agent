@@ -5,7 +5,6 @@
 #include <tiny_agent/providers/openai.hpp>
 #include <tiny_agent/providers/anthropic.hpp>
 #include <tiny_agent/providers/gemini.hpp>
-#include <libenvpp/env.hpp>
 #include <nlohmann/json-schema.hpp>
 #include <fstream>
 #include <sstream>
@@ -45,10 +44,16 @@ struct EnvKeys {
 static const EnvKeys& keys() {
     static const EnvKeys k = [] {
         load_dotenv(std::string(PROJECT_SOURCE_DIR) + "/.env");
+        // Plain getenv: keys() runs at static-init time via the skip decorators,
+        // where heavier machinery (libenvpp) is not guaranteed to be ready on MSVC.
+        auto get = [](const char* name) {
+            const char* v = std::getenv(name);
+            return std::string(v ? v : "");
+        };
         return EnvKeys{
-            env::get_or<std::string>("OPENAI_API_KEY", ""),
-            env::get_or<std::string>("CLAUDE_API_KEY", ""),
-            env::get_or<std::string>("GEMINI_API_KEY", ""),
+            get("OPENAI_API_KEY"),
+            get("CLAUDE_API_KEY"),
+            get("GEMINI_API_KEY"),
         };
     }();
     return k;
