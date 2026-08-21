@@ -10,32 +10,36 @@ just the shape the code expects it to be.
 |---|---|---|---|
 | Qdrant | vector store | live-verified 2026-08-21 | [docs/proofs/qdrant.md](proofs/qdrant.md) |
 | Chroma | vector store | live-verified 2026-08-21 | [docs/proofs/chroma.md](proofs/chroma.md) |
+| Weaviate | vector store | live-verified 2026-08-21 | [docs/proofs/weaviate.md](proofs/weaviate.md) |
+| Redis | vector store | live-verified 2026-08-21 | [docs/proofs/redis.md](proofs/redis.md) |
+| Milvus | vector store | live-verified 2026-08-21 | [docs/proofs/milvus.md](proofs/milvus.md) |
 | Arize Phoenix | tracing exporter | live-verified 2026-08-21 | [docs/proofs/phoenix.md](proofs/phoenix.md) |
-| Langfuse | tracing exporter | live verification in progress | `tests/test_tracing.cpp` ("live Langfuse export against configured credentials"), currently exercised only offline |
+| Langfuse | tracing exporter | live-verified 2026-08-21 | [docs/proofs/langfuse.md](proofs/langfuse.md) |
 | OTLP | tracing exporter | unit-tested | `tests/test_tracing.cpp` covers payload shaping; the "live OTLP export against a configured collector" case needs `TINY_AGENT_OTLP_ENDPOINT` against a real collector, not yet run |
 | Console / in-memory exporters | tracing exporter | unit-tested | `include/tiny_agent/observability/console.hpp` (`stderr_exporter`, `noop_exporter`, `MemoryExporter`); no external backend to verify against, offline coverage is the whole story |
 
 ## What "live-verified" means here
 
-Each of the three live-verified rows has a proof file with the date, the
-container image and tag actually run, the exact commands, and pasted raw
-output from `ctest` and from the doctest binary filtered to just the live
-cases, plus one piece of server-side evidence beyond "the client didn't
-throw" (Qdrant/Chroma collection state after the run, Phoenix's project list).
+Each live-verified row has a proof file with the date, the container image
+and tag actually run, the exact commands, and pasted raw output from `ctest`
+and from the doctest binary filtered to just the live cases, plus one piece
+of server-side evidence beyond "the client didn't throw": collection or
+keyspace state read back after the run for the five vector stores, Phoenix's
+project list, and Langfuse's ingested observations read back through its
+public API.
 
-Qdrant and Chroma were also exercised through `examples/19_vector_store`
-against the running containers. Phoenix was exercised through
-`examples/18_tracing` only as far as exporter selection: the example needs a
-live LLM to produce a trace to export, and none was configured in this
-environment, so the example itself stops at "set OPENAI_API_KEY" after
-correctly picking the Phoenix exporter. `test_tracing.cpp`'s live Phoenix
-case is what actually posts a span and is the one this verification leans on.
+Qdrant, Chroma, Weaviate and Redis were also exercised through
+`examples/19_vector_store` against the running containers; Milvus was
+verified through its dedicated `test_vs_milvus` suite against a live server
+instead. Phoenix was exercised through `examples/18_tracing` only as far as
+exporter selection: the example needs a live LLM to produce a trace to
+export, and none was configured in this environment, so the example itself
+stops at "set OPENAI_API_KEY" after correctly picking the Phoenix exporter.
+`test_tracing.cpp`'s live Phoenix and live Langfuse cases are what actually
+post a span and are what this verification leans on for both.
 
 ## What's still open
 
-Langfuse needs a real account (public/secret key pair) to exercise
-`obs::langfuse_exporter` against; that hasn't happened yet, hence "in
-progress" rather than "not verified". OTLP needs a running collector
-(the OTel collector or a Phoenix/Jaeger OTLP endpoint) pointed at by
-`TINY_AGENT_OTLP_ENDPOINT`; nothing library-side blocks that, it just hasn't
-been run.
+OTLP needs a running collector (the OTel collector or a Phoenix/Jaeger OTLP
+endpoint) pointed at by `TINY_AGENT_OTLP_ENDPOINT`; nothing library-side
+blocks that, it just hasn't been run.

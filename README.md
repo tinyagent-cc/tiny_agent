@@ -129,7 +129,7 @@ builds one at runtime. `Runnable` composes models, agents and plain lambdas with
 - **[Agent Skills](https://agentskills.io)** (`SKILL.md`) loading, which no other C++ framework does
 - **True SSE streaming**, tool-call deltas included, on the OpenAI-compatible and Anthropic paths
 - **[Tracing](docs/observability.md)** to Arize Phoenix, Langfuse, or any OTLP collector, with no vendor SDK
-- **[Vector stores](docs/vector-stores.md)**: in-process, hnswlib, Qdrant, Chroma, Weaviate, Redis, Milvus, behind one four-method concept
+- **[Vector stores](docs/vector-stores.md)**: in-process Flat, hnswlib, Qdrant, Chroma, Weaviate, Redis, Milvus, behind one four-method concept
 - **[Context management](docs/context-management.md)** against an explicit token budget
 - Multimodal messages, embeddings, batch, an agent-skills registry
 
@@ -137,7 +137,7 @@ builds one at runtime. `Runnable` composes models, agents and plain lambdas with
 
 Measured, not estimated (details in [docs/benchmarks.md](docs/benchmarks.md)): a
 complete streaming agent example is a **7.7 MB** stripped single binary (macOS
-arm64, TLS included), and the client uses **5.7 MB RSS** while streaming from
+arm64, TLS included), and the client uses **2.0 MB RSS** while streaming from
 llama.cpp on a Raspberry Pi 5. The agent layer is not the cost; the model is. CI
 builds and tests every push on arm64, the same CPU class as a Pi 5.
 
@@ -147,7 +147,7 @@ server:
 | Raspberry Pi 5 | Jetson Orin Nano |
 |---|---|
 | ![17_streaming on a Raspberry Pi 5](docs/assets/pi5-streaming.gif) | ![17_streaming on a Jetson Orin Nano](docs/assets/jetson-streaming.gif) |
-| Qwen2.5-3B-Instruct, CPU only: 5.48 tok/s | Qwen2.5-3B-Instruct, GPU, 36 layers offloaded: 23.9 tok/s |
+| Qwen2.5-3B-Instruct, CPU only: 5.48 tok/s | Qwen2.5-3B-Instruct, GPU, 36 layers offloaded: 23.85 tok/s |
 
 How that compares in the C++ agent space, structurally:
 
@@ -355,6 +355,7 @@ MILVUS_URL=http://localhost:19530 ctest --preset default -R test_vs_milvus
 
 - [Observability](docs/observability.md): tracing, exporters, Phoenix, Langfuse
 - [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma, Weaviate, Redis, Milvus
+- [Integration status](docs/integrations.md): live-verified backends versus offline-only, per integration
 - [Context management](docs/context-management.md): token budgets and compaction
 - [Benchmarks](docs/benchmarks.md): binary size, RSS, time to first token
 - [Direction](docs/direction-2026-08.md): where this is going and why
