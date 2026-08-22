@@ -362,7 +362,7 @@ MILVUS_URL=http://localhost:19530 ctest --preset default -R test_vs_milvus
 - [Observability](docs/observability.md): tracing, exporters, Phoenix, Langfuse
 - [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma, Weaviate, Redis, Milvus
 - [Integration status](docs/integrations.md): live-verified backends versus offline-only, per integration
-- **Reflexes and guardrails**: pair with [rete_cpp](https://github.com/tinyagent-cc/rete_cpp) via `middleware/reflex.hpp` — rules answer the easy cases in microseconds, and veto bad tool calls before dispatch. (Landing with the reflex-middleware plan.)
+- **Reflexes and guardrails**: pair with [rete_cpp](https://github.com/tinyagent-cc/rete_cpp) via `middleware/reflex.hpp`, rules answer the easy cases in microseconds, and veto bad tool calls before dispatch. (Landing with the reflex-middleware plan.)
 - [Context management](docs/context-management.md): token budgets and compaction
 - [Benchmarks](docs/benchmarks.md): binary size, RSS, time to first token
 - [Direction](docs/direction-2026-08.md): where this is going and why
