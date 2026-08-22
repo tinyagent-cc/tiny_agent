@@ -55,6 +55,6 @@ jobs:
       - name: Vanilla configure and build (no rete)
         if: matrix.name == 'linux-x64'
         run: |
-          cmake -S . -B build-vanilla
+          cmake -S . -B build-vanilla -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           cmake --build build-vanilla --target test_middleware
           ! cmake --build build-vanilla --target test_reflex
