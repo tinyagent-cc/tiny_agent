@@ -50,6 +50,24 @@ void middleware_stack(std::shared_ptr<obs::Tracer> tracer) {
     };
 }
 
+#ifdef TINY_AGENT_HAS_RETE
+// Only compiled when RETE_INCLUDE_DIR is set (see tests/CMakeLists.txt): the
+// reflex snippet is optional like the rest of rete_cpp, so it can't be a hard
+// dependency of the always-on offline suite the way the rest of this file is.
+#include <tiny_agent/middleware/reflex.hpp>
+
+void reflex_snippet() {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("ping")
+        .when("msg", "text", "ping")
+        .then([&](auto&, auto&) { rx.outcome().respond("pong"); })
+        .build();
+
+    MiddlewareChain chain;
+    chain.add(rx.middleware({.extract_facts = middleware::message_facts}));
+}
+#endif
+
 void chat(const char* key) {
     auto llm = OpenAIChat{.model = "gpt-4o-mini", .api_key = key};
     auto response = llm.chat({Message::system("Be concise."),

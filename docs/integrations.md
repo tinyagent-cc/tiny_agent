@@ -17,6 +17,7 @@ just the shape the code expects it to be.
 | Langfuse | tracing exporter | live-verified 2026-08-21 | [docs/proofs/langfuse.md](proofs/langfuse.md) |
 | OTLP | tracing exporter | unit-tested | `tests/test_tracing.cpp` covers payload shaping; the "live OTLP export against a configured collector" case needs `TINY_AGENT_OTLP_ENDPOINT` against a real collector, not yet run |
 | Console / in-memory exporters | tracing exporter | unit-tested | `include/tiny_agent/observability/console.hpp` (`stderr_exporter`, `noop_exporter`, `MemoryExporter`); no external backend to verify against, offline coverage is the whole story |
+| rete_cpp | reflex + guardrail middleware, expert-system tool | unit-tested (20 cases) | `tests/test_reflex.cpp`, `examples/21_reflex_agent.cpp` |
 
 ## What "live-verified" means here
 

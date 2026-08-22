@@ -41,10 +41,20 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Configure
-        run: cmake --preset default
+        run: cmake --preset default -DTINY_AGENT_FETCH_RETE=ON
 
       - name: Build
         run: cmake --build --preset default
 
       - name: Test
         run: ctest --test-dir build --output-on-failure -C Debug
+
+      # rete_cpp is opt-in; one leg proves the vanilla, fully-offline build
+      # still works with neither TINY_AGENT_RETE_DIR nor TINY_AGENT_FETCH_RETE
+      # set, and that reflex targets are skipped rather than silently required.
+      - name: Vanilla configure and build (no rete)
+        if: matrix.name == 'linux-x64'
+        run: |
+          cmake -S . -B build-vanilla
+          cmake --build build-vanilla --target test_middleware
+          ! cmake --build build-vanilla --target test_reflex
