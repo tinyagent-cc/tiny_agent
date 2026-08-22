@@ -178,3 +178,92 @@ TEST_CASE("transient facts are retracted even when a rule action throws") {
     auto resp = chain.run(b, [](auto&) { return model_says("model"); });
     CHECK(resp.message.text() == "model");
 }
+
+static LLMResponse model_calls_tool(const std::string& tool, json args) {
+    Message m = Message::assistant("");
+    m.tool_calls.push_back({"call-0", tool, std::move(args)});
+    return {std::move(m), {}, "tool_calls", {}};
+}
+
+TEST_CASE("guardrail vetoes a forbidden tool call") {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("no-delete")
+        .when(std::string("?c"), std::string("tool"), std::string("delete_everything"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) {
+            rx.outcome().veto(0, "destructive tool blocked");
+        })
+        .build();
+
+    MiddlewareChain chain;
+    chain.add(rx.middleware({
+        .extract_response_facts = [](const LLMResponse& r) {
+            std::vector<middleware::Fact> facts;
+            for (size_t i = 0; i < r.message.tool_calls.size(); ++i)
+                facts.push_back({std::string("call-") + std::to_string(i),
+                                 std::string("tool"), r.message.tool_calls[i].name});
+            return facts;
+        }}));
+
+    std::vector<Message> msgs = {Message::user("clean up")};
+    auto resp = chain.run(msgs, [](auto&) {
+        return model_calls_tool("delete_everything", {{"path", "/"}}); });
+
+    CHECK(resp.message.tool_calls.empty());
+    CHECK(resp.finish_reason == "reflex_guardrail");
+    CHECK(resp.raw["reflex_vetoes"][0]["tool"] == "delete_everything");
+}
+
+TEST_CASE("guardrail rewrites an argument and keeps the call") {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("cap-brightness")
+        .when(std::string("call-0"), std::string("tool"), std::string("led"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) {
+            rx.outcome().replace_arg(0, "r", 32);
+        })
+        .build();
+
+    MiddlewareChain chain;
+    chain.add(rx.middleware({
+        .extract_response_facts = [](const LLMResponse& r) {
+            std::vector<middleware::Fact> facts;
+            for (size_t i = 0; i < r.message.tool_calls.size(); ++i)
+                facts.push_back({std::string("call-") + std::to_string(i),
+                                 std::string("tool"), r.message.tool_calls[i].name});
+            return facts;
+        }}));
+
+    std::vector<Message> msgs = {Message::user("mood light")};
+    auto resp = chain.run(msgs, [](auto&) {
+        return model_calls_tool("led", {{"r", 255}, {"g", 0}, {"b", 0}}); });
+
+    REQUIRE(resp.message.tool_calls.size() == 1);
+    CHECK(resp.message.tool_calls[0].arguments["r"] == 32);
+    CHECK(resp.message.tool_calls[0].arguments["g"] == 0);
+    CHECK(resp.finish_reason == "tool_calls");   // untouched: not a veto
+}
+
+TEST_CASE("a clean response passes the guardrail untouched") {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("no-delete")
+        .when(std::string("?c"), std::string("tool"), std::string("delete_everything"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) { rx.outcome().veto(0, "blocked"); })
+        .build();
+
+    MiddlewareChain chain;
+    chain.add(rx.middleware({
+        .extract_response_facts = [](const LLMResponse& r) {
+            std::vector<middleware::Fact> facts;
+            for (size_t i = 0; i < r.message.tool_calls.size(); ++i)
+                facts.push_back({std::string("call-") + std::to_string(i),
+                                 std::string("tool"), r.message.tool_calls[i].name});
+            return facts;
+        }}));
+
+    std::vector<Message> msgs = {Message::user("hi")};
+    auto resp = chain.run(msgs, [](auto&) {
+        return model_calls_tool("express", {{"emotion", "happy"}}); });
+
+    REQUIRE(resp.message.tool_calls.size() == 1);
+    CHECK(resp.message.tool_calls[0].name == "express");
+    CHECK_FALSE(resp.raw.contains("reflex_vetoes"));
+}
