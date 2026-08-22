@@ -101,6 +101,14 @@ class ReflexEngine {
         transient_.clear();
     }
 
+    // Retracts transient WMEs on scope exit no matter how the scope is left —
+    // a rule action that throws during engine_.run() must not leave transients
+    // asserted forever, or later runs get spurious matches against stale facts.
+    struct TransientGuard {
+        ReflexEngine* self;
+        ~TransientGuard() { self->retract_transient(); }
+    };
+
 public:
     rete::ReteEngine& engine() { return engine_; }
     ReflexOutcome& outcome() { return outcome_; }
@@ -114,16 +122,20 @@ public:
             if (cfg.extract_facts) {
                 outcome_.reset();
                 assert_transient(cfg.extract_facts(msgs));
-                engine_.run(cfg.max_cycles);
-                retract_transient();
+                {
+                    TransientGuard guard{this};
+                    engine_.run(cfg.max_cycles);
+                }
                 if (outcome_.triggered()) return outcome_.to_response();
             }
             auto resp = next(msgs);
             if (cfg.extract_response_facts && resp.message.has_tool_calls()) {
                 outcome_.reset();
                 assert_transient(cfg.extract_response_facts(resp));
-                engine_.run(cfg.max_cycles);
-                retract_transient();
+                {
+                    TransientGuard guard{this};
+                    engine_.run(cfg.max_cycles);
+                }
                 outcome_.apply_guardrails(resp);
             }
             return resp;

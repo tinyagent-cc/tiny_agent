@@ -154,3 +154,27 @@ TEST_CASE("the same reflex fires again on a later identical event") {
     chain.run(b, [](auto&) { return model_says("x"); });
     CHECK(fires == 2);
 }
+
+TEST_CASE("transient facts are retracted even when a rule action throws") {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("boom")
+        .when(std::string("msg"), std::string("text"), std::string("ping"))
+        .then([](rete::ReteEngine&, const rete::Bindings&) { throw Error("boom"); })
+        .build();
+
+    auto mw = rx.middleware({
+        .extract_facts = [](const std::vector<Message>& msgs) {
+            return std::vector<middleware::Fact>{
+                {std::string("msg"), std::string("text"), msgs.back().text()}};
+        }});
+
+    MiddlewareChain chain; chain.add(mw);
+    std::vector<Message> a = {Message::user("ping")};
+    CHECK_THROWS(chain.run(a, [](auto&) { return model_says("x"); }));
+    CHECK(rx.engine().wme_count() == 0);
+
+    // engine still behaves on a later run: no spurious match from leaked facts
+    std::vector<Message> b = {Message::user("quiet")};
+    auto resp = chain.run(b, [](auto&) { return model_says("model"); });
+    CHECK(resp.message.text() == "model");
+}
