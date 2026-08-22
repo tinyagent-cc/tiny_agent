@@ -3,6 +3,7 @@
 #include <rete/rete.hpp>
 #include <tiny_agent/integrations/rete_convert.hpp>
 #include <tiny_agent/middleware/reflex.hpp>
+#include <tiny_agent/tools/rete_tool.hpp>
 
 using namespace tiny_agent;
 
@@ -288,4 +289,34 @@ TEST_CASE("tool_call_facts flattens calls and scalar args") {
     REQUIRE(facts.size() == 4);
     CHECK(std::get<std::string>(facts[0][2]) == "led");
     CHECK(std::get<int64_t>(facts[1][2]) == 0);
+}
+
+TEST_CASE("rete_tool derives facts from a rulebase") {
+    auto tool = tools::rete_tool({
+        .name = "animal_expert",
+        .description = "Classify animals from observed traits.",
+        .setup = [](rete::ReteEngine& eng) {
+            eng.add_rule("mammal")
+                .when(std::string("?x"), std::string("has"), std::string("fur"))
+                .then([&eng](rete::ReteEngine& e, const rete::Bindings& b) {
+                    e.assert_fact(b.at("?x"), std::string("is"), std::string("mammal"));
+                })
+                .build();
+        }});
+
+    CHECK(tool.schema.name == "animal_expert");
+    auto out = tool({{"facts", {{"rex", "has", "fur"}}}});
+    bool derived = false;
+    for (auto& f : out["facts"])
+        if (f[0] == "rex" && f[1] == "is" && f[2] == "mammal") derived = true;
+    CHECK(derived);
+}
+
+TEST_CASE("rete_tool is stateless across invocations") {
+    auto tool = tools::rete_tool({
+        .name = "t", .description = "d",
+        .setup = [](rete::ReteEngine&) {}});
+    tool({{"facts", {{"a", "b", "c"}}}});
+    auto out = tool({{"facts", json::array()}});
+    CHECK(out["facts"].empty());
 }
