@@ -269,6 +269,118 @@ TEST_CASE("a clean response passes the guardrail untouched") {
     CHECK_FALSE(resp.raw.contains("reflex_vetoes"));
 }
 
+TEST_CASE("guardrail vetoes multiple calls back-to-front and the middle call survives") {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("no-delete-0")
+        .when(std::string("call-0"), std::string("tool"), std::string("delete_everything"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) { rx.outcome().veto(0, "blocked"); })
+        .build();
+    rx.engine().add_rule("no-delete-2")
+        .when(std::string("call-2"), std::string("tool"), std::string("delete_everything"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) { rx.outcome().veto(2, "blocked"); })
+        .build();
+
+    MiddlewareChain chain;
+    chain.add(rx.middleware({
+        .extract_response_facts = [](const LLMResponse& r) {
+            std::vector<middleware::Fact> facts;
+            for (size_t i = 0; i < r.message.tool_calls.size(); ++i)
+                facts.push_back({std::string("call-") + std::to_string(i),
+                                 std::string("tool"), r.message.tool_calls[i].name});
+            return facts;
+        }}));
+
+    std::vector<Message> msgs = {Message::user("clean up")};
+    auto resp = chain.run(msgs, [](auto&) {
+        Message m = Message::assistant("");
+        m.tool_calls.push_back({"call-0", "delete_everything", {{"path", "/a"}}});
+        m.tool_calls.push_back({"call-1", "keep_me", {{"x", 1}}});
+        m.tool_calls.push_back({"call-2", "delete_everything", {{"path", "/b"}}});
+        return LLMResponse{std::move(m), {}, "tool_calls", {}};
+    });
+
+    REQUIRE(resp.message.tool_calls.size() == 1);
+    CHECK(resp.message.tool_calls[0].name == "keep_me");
+    CHECK(resp.message.tool_calls[0].arguments["x"] == 1);
+    CHECK(resp.raw["reflex_vetoes"].size() == 2);
+}
+
+TEST_CASE("guardrail applies an arg replacement on the call that survives a veto") {
+    middleware::ReflexEngine rx;
+    rx.engine().add_rule("no-delete")
+        .when(std::string("call-0"), std::string("tool"), std::string("delete_everything"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) { rx.outcome().veto(0, "blocked"); })
+        .build();
+    rx.engine().add_rule("cap-brightness")
+        .when(std::string("call-1"), std::string("tool"), std::string("led"))
+        .then([&rx](rete::ReteEngine&, const rete::Bindings&) { rx.outcome().replace_arg(1, "r", 32); })
+        .build();
+
+    MiddlewareChain chain;
+    chain.add(rx.middleware({
+        .extract_response_facts = [](const LLMResponse& r) {
+            std::vector<middleware::Fact> facts;
+            for (size_t i = 0; i < r.message.tool_calls.size(); ++i)
+                facts.push_back({std::string("call-") + std::to_string(i),
+                                 std::string("tool"), r.message.tool_calls[i].name});
+            return facts;
+        }}));
+
+    std::vector<Message> msgs = {Message::user("mood light, then clean up")};
+    auto resp = chain.run(msgs, [](auto&) {
+        Message m = Message::assistant("");
+        m.tool_calls.push_back({"call-0", "delete_everything", {{"path", "/"}}});
+        m.tool_calls.push_back({"call-1", "led", {{"r", 255}, {"g", 0}}});
+        return LLMResponse{std::move(m), {}, "tool_calls", {}};
+    });
+
+    REQUIRE(resp.message.tool_calls.size() == 1);
+    CHECK(resp.message.tool_calls[0].name == "led");
+    CHECK(resp.message.tool_calls[0].arguments["r"] == 32);
+    CHECK(resp.raw["reflex_vetoes"][0]["tool"] == "delete_everything");
+}
+
+TEST_CASE("max_cycles bounds a self-perpetuating rule pair and the middleware still returns") {
+    middleware::ReflexEngine rx;
+    int bumps = 0;
+    // "bump" fires on a "n" fact and asserts a matching "m" fact; "relay"
+    // fires on that "m" fact and asserts the next "n" fact, which retriggers
+    // "bump" — an unbounded ping-pong with no natural fixed point. Only
+    // max_cycles keeps engine_.run() from looping forever.
+    rx.engine().add_rule("bump")
+        .when(std::string("counter"), std::string("n"), std::string("?v"))
+        .then([&](rete::ReteEngine& e, const rete::Bindings& b) {
+            ++bumps;
+            e.assert_fact(std::string("counter"), std::string("m"), b.at("?v"));
+        })
+        .build();
+    rx.engine().add_rule("relay")
+        .when(std::string("counter"), std::string("m"), std::string("?v"))
+        .then([&](rete::ReteEngine& e, const rete::Bindings& b) {
+            int64_t v = std::get<int64_t>(b.at("?v"));
+            e.assert_fact(std::string("counter"), std::string("n"), v + 1);
+        })
+        .build();
+
+    auto mw = rx.middleware({
+        .extract_facts = [](const std::vector<Message>&) {
+            return std::vector<middleware::Fact>{
+                {std::string("counter"), std::string("n"), static_cast<int64_t>(0)}};
+        },
+        .max_cycles = 8});
+
+    MiddlewareChain chain; chain.add(mw);
+    std::vector<Message> msgs = {Message::user("go")};
+    auto resp = chain.run(msgs, [](auto&) { return model_says("model"); });
+
+    // Terminated instead of hanging, and stayed within the cycle budget.
+    CHECK(bumps > 0);
+    CHECK(bumps <= 8);
+    // Neither rule calls respond()/call_tool(), so the reflex phase never
+    // triggers and the model still runs.
+    CHECK(resp.message.text() == "model");
+}
+
 TEST_CASE("message_facts describes the last non-system message") {
     std::vector<Message> msgs = {Message::system("sys"), Message::user("hello world")};
     auto facts = middleware::message_facts(msgs);

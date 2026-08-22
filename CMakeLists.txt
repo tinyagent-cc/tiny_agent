@@ -76,9 +76,15 @@ if(TINY_AGENT_RETE_DIR)
   set(RETE_INCLUDE_DIR "${TINY_AGENT_RETE_DIR}/include")
 elseif(TINY_AGENT_FETCH_RETE)
   include(FetchContent)
+  # rete_cpp is header-only from our side, but its own CMakeLists.txt builds
+  # tests/examples/benchmarks by default and declares a `test_types` target
+  # that collides with tiny_agent's. SOURCE_SUBDIR points FetchContent at a
+  # subdirectory with no CMakeLists.txt, so it downloads the source without
+  # ever running rete_cpp's own CMake -- we only want the headers.
   FetchContent_Declare(rete_cpp
     GIT_REPOSITORY https://github.com/tinyagent-cc/rete_cpp.git
-    GIT_TAG 4c2e6c3a94b6759bc710c26d8d601eecb3cec2e3)   # master, pinned 2026-08-22
+    GIT_TAG 4c2e6c3a94b6759bc710c26d8d601eecb3cec2e3   # master, pinned 2026-08-22
+    SOURCE_SUBDIR cmake-none)
   FetchContent_MakeAvailable(rete_cpp)
   set(RETE_INCLUDE_DIR "${rete_cpp_SOURCE_DIR}/include")
 endif()

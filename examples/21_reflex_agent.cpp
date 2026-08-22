@@ -30,7 +30,6 @@ int main() {
     // rule covers call-0, call-1, ... — but veto(0, ...) hardcodes the index.
     // A response with more than one tool call would need the real index
     // derived from the binding instead.
-    // veto-by-binding: see Bindings docs
     rx.engine().add_rule("no-delete")
         .when("?c", "tool", "delete_everything")
         .then([&](auto&, auto&) { rx.outcome().veto(0, "destructive tool blocked"); })

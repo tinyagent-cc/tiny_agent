@@ -33,7 +33,6 @@ public:
     }
 
     bool triggered() const { return text_.has_value() || !calls_.empty(); }
-    bool has_guardrails() const { return !vetoes_.empty() || !arg_replacements_.empty(); }
 
     void reset() {
         text_.reset(); calls_.clear(); vetoes_.clear();
@@ -43,14 +42,22 @@ public:
     LLMResponse to_response() const {
         Message m = Message::assistant(text_.value_or(""));
         m.tool_calls = calls_;
-        return {std::move(m), json{{"reflex", true}}, "reflex", json{{"reflex", true}}};
+        return {std::move(m),
+                json{{"prompt_tokens", 0}, {"completion_tokens", 0}, {"total_tokens", 0}},
+                "reflex",
+                json{{"reflex", true}}};
     }
 
     void apply_guardrails(LLMResponse& resp) const {
         auto& calls = resp.message.tool_calls;
-        for (auto& [idx, key, value] : arg_replacements_)
+        json ignored = json::array();
+
+        for (auto& [idx, key, value] : arg_replacements_) {
             if (idx >= 0 && idx < static_cast<int>(calls.size()))
                 calls[static_cast<size_t>(idx)].arguments[key] = value;
+            else
+                ignored.push_back({{"index", idx}, {"reason", "out of range"}});
+        }
 
         if (!vetoes_.empty()) {
             json veto_log = json::array();
@@ -60,8 +67,11 @@ public:
                     veto_log.push_back({{"tool", calls[static_cast<size_t>(it->first)].name},
                                         {"reason", it->second}});
                     calls.erase(calls.begin() + it->first);
+                } else {
+                    ignored.push_back({{"index", it->first}, {"reason", "out of range"}});
                 }
             }
+            if (!resp.raw.is_object()) resp.raw = json::object();
             resp.raw["reflex_vetoes"] = veto_log;
             // a response that was only vetoed calls must not read as a silent
             // empty answer to the agent loop
@@ -73,6 +83,11 @@ public:
                 resp.message.content = note;
                 resp.finish_reason = "reflex_guardrail";
             }
+        }
+
+        if (!ignored.empty()) {
+            if (!resp.raw.is_object()) resp.raw = json::object();
+            resp.raw["reflex_veto_ignored"] = ignored;
         }
     }
 };
@@ -87,6 +102,19 @@ struct ReflexConfig {
 // rule actions capture outcome() by reference. The ReflexEngine must outlive
 // every chain its middleware() was added to. Not thread-safe: one concurrent
 // run at a time.
+//
+// One rule network serves both hooks of middleware(): the pre-model reflex
+// phase and the post-model guardrail phase. Rules pick which phase they run
+// in by the identifier convention of the facts they match, not by any
+// separate registration -- "msg" facts (from message_facts) only exist
+// during the pre-model phase, and "call-N" facts (from tool_call_facts) only
+// exist during the post-model phase, because each phase asserts and retracts
+// its own transient facts before the other runs. A rule written against
+// "msg" facts is therefore a reflex; a rule written against "call-N" facts is
+// a guardrail. If a guardrail-phase rule calls outcome().respond(...) or
+// outcome().call_tool(...), that outcome is never read -- apply_guardrails()
+// only consumes vetoes and arg replacements -- so setting them there is
+// ignored by design, not a bug.
 class ReflexEngine {
     rete::ReteEngine engine_;
     ReflexOutcome outcome_;
@@ -110,6 +138,14 @@ class ReflexEngine {
     };
 
 public:
+    ReflexEngine() = default;
+    // middleware() closures capture `this`; a copy or move would leave those
+    // closures pointing at a stale or vanished engine.
+    ReflexEngine(const ReflexEngine&) = delete;
+    ReflexEngine& operator=(const ReflexEngine&) = delete;
+    ReflexEngine(ReflexEngine&&) = delete;
+    ReflexEngine& operator=(ReflexEngine&&) = delete;
+
     rete::ReteEngine& engine() { return engine_; }
     ReflexOutcome& outcome() { return outcome_; }
 

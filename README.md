@@ -371,8 +371,9 @@ MILVUS_URL=http://localhost:19530 ctest --preset default -R test_vs_milvus
 
 Pair tiny_agent with [rete_cpp](https://github.com/tinyagent-cc/rete_cpp) and
 the middleware answers the easy cases before the model runs: a Rete rule that
-matches returns in microseconds and spends zero tokens, and after the model
-runs, guardrail rules veto or rewrite tool calls deterministically.
+matches answers without ever calling the model, spending zero tokens on that
+turn, and after the model runs, guardrail rules veto or rewrite tool calls
+deterministically.
 
 ```cpp
 middleware::ReflexEngine rx;
