@@ -33,5 +33,4 @@ The part I actually care about is that it runs on a Pi 5. The streaming example
 is a 7.4 MB stripped binary and peaks at 2.0 MB RSS while streaming from a local
 llama.cpp server. Measured on the board, raw output in the repo.
 
-Known gap: one example won't build on g++ 11.4. MIT licensed, so vendor it and
-ship it.
+MIT licensed, so vendor it and ship it.

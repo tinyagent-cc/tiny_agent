@@ -471,10 +471,9 @@ cmake --build --preset default
       <summary>What C++ standard and compilers does it need?</summary>
       <div class="qa-body"><p>C++20, set by <code>CMAKE_CXX_STANDARD 20</code> in the
         build. CI compiles and runs the test suite on every push across Linux x64 and
-        arm64, macOS arm64, and Windows x64. One known gap:
-        <code>16_deep_agent_custom.cpp</code> does not compile on g++ 11.4, which keeps two
-        <code>init_chat_model</code> overloads in the candidate set for a braced
-        initializer. Newer GCC and Clang resolve it fine.</p></div>
+        arm64, macOS arm64, and Windows x64. Compilers as old as g++ 11.4 are covered:
+        the one known overload ambiguity it hit is fixed and pinned by a regression
+        test.</p></div>
     </details>
 
     <details class="qa">
