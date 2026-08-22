@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tiny_agent — header-only C++20 agent framework for the edge</title>
+<meta name="description" content="tiny_agent is a header-only C++20 framework for tool-using AI agents. Seven providers, MCP over stdio and HTTP, sub-agent delegation, and a 7.4 MB binary that streams from llama.cpp on a Raspberry Pi 5. MIT licensed.">
+<link rel="canonical" href="https://tinyagent.cc/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="tiny_agent — header-only C++20 agent framework for the edge">
+<meta property="og:description" content="Point it at a frontier API or at a llama.cpp server on a Raspberry Pi. The agent code does not change.">
+<meta property="og:url" content="https://tinyagent.cc/">
+<meta name="theme-color" content="#00599C">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar" id="top">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#top" aria-label="tiny_agent, back to top">
+      <svg class="brand-mark" viewBox="0 0 180 180" aria-hidden="true" focusable="false">
+        <rect x="0" y="0" width="180" height="180" rx="40" fill="#e8f1f9"/>
+        <g stroke="#00599C" stroke-width="7" stroke-linecap="round">
+          <line x1="52" y1="34" x2="52" y2="20"/><line x1="90" y1="30" x2="90" y2="16"/><line x1="128" y1="34" x2="128" y2="20"/>
+          <line x1="52" y1="146" x2="52" y2="160"/><line x1="90" y1="150" x2="90" y2="164"/><line x1="128" y1="146" x2="128" y2="160"/>
+        </g>
+        <rect x="34" y="38" width="112" height="104" rx="26" fill="#00599C"/>
+        <circle cx="68" cy="82" r="12" fill="#ffffff"/><circle cx="112" cy="82" r="12" fill="#ffffff"/>
+        <path d="M 66 112 Q 90 128 114 112" stroke="#ffffff" stroke-width="8" fill="none" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-word">tiny_agent</span>
+    </a>
+
+    <button class="navtoggle" id="navtoggle" aria-expanded="false" aria-controls="nav">
+      <span class="navtoggle-bars" aria-hidden="true"><i></i><i></i></span>
+      <span class="navtoggle-label">Menu</span>
+    </button>
+
+    <nav class="nav" id="nav" aria-label="Sections">
+      <a href="#edge">Why edge</a>
+      <a href="#features">Features</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#faq">FAQ</a>
+      <a class="nav-cta" href="https://github.com/rhajamor/tiny_agent">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ─────────────────────────────  HERO  ───────────────────────────── -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow rise" data-rise="1">header-only · C++20 · MIT</p>
+      <h1 class="rise" data-rise="2">Agents that fit<br>on the board.</h1>
+      <p class="lede rise" data-rise="3">
+        tiny_agent is a header-only C++20 framework for tool-using agents. Point it at a
+        frontier API or at a llama.cpp server on a Raspberry Pi, and the agent code does
+        not change.
+      </p>
+      <p class="actions rise" data-rise="4">
+        <a class="btn btn-primary" href="#quickstart">Read the quickstart</a>
+        <a class="btn btn-ghost" href="https://github.com/rhajamor/tiny_agent">
+          View on GitHub
+          <svg class="ext" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3h7.5v7.5M13 3 3.6 12.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </p>
+    </div>
+
+    <div class="hero-code rise" data-rise="3">
+      <div class="panel">
+        <div class="panel-head" role="tablist" aria-label="Code examples">
+          <button role="tab" id="tab-cloud" aria-controls="pane-cloud" aria-selected="true" class="tab is-on">01_basic_chat.cpp</button>
+          <button role="tab" id="tab-local" aria-controls="pane-local" aria-selected="false" class="tab" tabindex="-1">17_streaming.cpp</button>
+          <button class="copy" data-copy="pane-cloud" type="button">Copy</button>
+        </div>
+
+        <div class="panel-body" role="tabpanel" id="pane-cloud" aria-labelledby="tab-cloud" tabindex="0"><pre><code><span class="p">#include</span> <span class="s">&lt;tiny_agent/tiny_agent.hpp&gt;</span>
+<span class="p">#include</span> <span class="s">&lt;tiny_agent/providers/openai.hpp&gt;</span>
+
+<span class="k">using namespace</span> tiny_agent;
+
+<span class="k">auto</span> llm = <span class="t">OpenAIChat</span>{.model=<span class="s">"gpt-4o-mini"</span>, .api_key=key};
+
+<span class="k">auto</span> response = llm.<span class="f">chat</span>({
+    <span class="t">Message</span>::<span class="f">system</span>(
+        <span class="s">"You are a concise assistant. Reply in one sentence."</span>),
+    <span class="t">Message</span>::<span class="f">user</span>(<span class="s">"What is the capital of Japan?"</span>)
+});
+
+std::cout &lt;&lt; response.message.<span class="f">text</span>() &lt;&lt; <span class="s">"\n"</span>;</code></pre></div>
+
+        <div class="panel-body" role="tabpanel" id="pane-local" aria-labelledby="tab-local" tabindex="0" hidden><pre><code><span class="p">#include</span> <span class="s">&lt;tiny_agent/tiny_agent.hpp&gt;</span>
+<span class="p">#include</span> <span class="s">&lt;tiny_agent/providers/local.hpp&gt;</span>
+
+<span class="k">using namespace</span> tiny_agent;
+
+<span class="k">auto</span> agent = <span class="f">make_agent</span>(local::<span class="f">ollama</span>(<span class="s">"llama3"</span>), {
+    .system_prompt = <span class="s">"You are a concise assistant."</span>
+});
+
+<span class="c">// run_stream drives the full ReAct loop; text deltas arrive live.</span>
+std::string final = agent.<span class="f">run_stream</span>(
+    <span class="s">"Tell me a short story about a curious robot."</span>,
+    [](<span class="k">const</span> <span class="t">StreamEvent</span>&amp; e) {
+        <span class="k">if</span> (e.kind == <span class="t">StreamEvent</span>::<span class="t">Kind</span>::text_delta)
+            std::cout &lt;&lt; e.text &lt;&lt; std::flush;
+    });</code></pre></div>
+      </div>
+      <p class="panel-note">Both files ship in <code>examples/</code>. The second one needs no API key: <code>local::ollama()</code>, <code>local::llamacpp()</code> and <code>local::vllm()</code> talk to any OpenAI-compatible server on the machine or the LAN.</p>
+    </div>
+  </div>
+
+  <!-- signature: the spec rail, set like a component datasheet -->
+  <div class="wrap">
+    <div class="rail" aria-label="Measured footprint">
+      <div class="rail-row">
+        <div class="spec">
+          <p class="spec-key">stripped binary</p>
+          <p class="spec-val">7.4<span class="unit">MB</span></p>
+          <p class="spec-src">17_streaming, Release, Raspberry Pi 5</p>
+        </div>
+        <div class="spec">
+          <p class="spec-key">peak client RSS</p>
+          <p class="spec-val">2.0<span class="unit">MB</span></p>
+          <p class="spec-src">during an active streamed response, Pi 5</p>
+        </div>
+        <div class="spec">
+          <p class="spec-key">generation, CPU only</p>
+          <p class="spec-val">5.48<span class="unit">tok/s</span></p>
+          <p class="spec-src">Qwen2.5-3B-Instruct Q4_K_M, Pi 5</p>
+        </div>
+        <div class="spec">
+          <p class="spec-key">generation, GPU</p>
+          <p class="spec-val">23.85<span class="unit">tok/s</span></p>
+          <p class="spec-src">same model, 36 layers offloaded, Jetson Orin Nano</p>
+        </div>
+      </div>
+      <p class="rail-foot">Measured 2026-08-21 on the named devices, not estimated. Commands and raw output in <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  WHY EDGE  ───────────────────────────── -->
+<section class="section" id="edge">
+  <div class="wrap">
+    <p class="eyebrow">why edge</p>
+    <h2 class="h2">The constraints are hard,<br>not preferences</h2>
+    <div class="edge-grid">
+      <div class="edge-lead">
+        <p>Inference in C++ is already solved. llama.cpp and Ollama run the model, and
+        llama.cpp's own docs say the agent loop is the caller's problem. That loop is what
+        tiny_agent is: the delegation, the middleware, the tools, the memory, in a few
+        thousand lines of headers with no virtual dispatch anywhere in the dispatch path.</p>
+        <p>On a device, three things stop being negotiable.</p>
+      </div>
+      <ul class="constraints">
+        <li>
+          <p class="c-key">offline</p>
+          <p>Point <code>local::llamacpp()</code>, <code>local::ollama()</code> or
+          <code>local::vllm()</code> at a server on the machine or the LAN and nothing
+          leaves it. The offline test suite runs the same way: 383 cases, no network,
+          no keys.</p>
+        </li>
+        <li>
+          <p class="c-key">audit</p>
+          <p>Tracing goes to Arize Phoenix, Langfuse, or any OTLP collector, with no vendor
+          SDK in the build. Six log levels, default <code>warn</code>, and
+          <code>trace</code> prints raw HTTP bodies, JSON-RPC messages, tool arguments
+          and results.</p>
+        </li>
+        <li>
+          <p class="c-key">budget</p>
+          <p>7.4 MB of stripped binary and 2.0 MB of RSS on a Pi 5, measured while
+          streaming. The agent layer is not the cost. The model is.</p>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  FEATURES  ───────────────────────────── -->
+<section class="section section-wash" id="features">
+  <div class="wrap">
+    <p class="eyebrow">what it does</p>
+    <h2 class="h2">What ships in the headers</h2>
+
+    <article class="card card-lead">
+      <div class="lead-copy">
+        <h3>DeepAgent: sub-agents are just tools</h3>
+        <p><code>agent_as_tool()</code> wraps a <code>shared_ptr&lt;Agent&gt;</code> in a
+        <code>DynamicTool</code> with a JSON schema, so delegation needs no new concept and
+        no depth limit. Each sub-agent can run a different model from a different provider.</p>
+        <p>A tool that throws never takes down the loop: the exception comes back as a
+        <code>tool_result</code> the model reads and recovers from, and truncated tool
+        arguments get the same treatment instead of an exception out of the JSON parser.</p>
+      </div>
+
+      <div class="lead-art">
+        <svg class="tree" viewBox="0 0 470 222" role="img" aria-label="Delegation tree: a director agent on gpt-4o calls an analyst agent on claude-sonnet-4-5, which calls a fact_checker agent on gpt-4o-mini.">
+          <g fill="none" stroke="#B9D4E9" stroke-width="2">
+            <path d="M46 62 V111 H88"/>
+            <path d="M118 134 V183 H160"/>
+          </g>
+          <g class="tree-node">
+            <rect x="22" y="16" width="196" height="46" rx="12"/>
+            <text x="42" y="45">director</text>
+          </g>
+          <text class="tree-model" x="234" y="45">gpt-4o</text>
+
+          <g class="tree-node">
+            <rect x="94" y="88" width="196" height="46" rx="12"/>
+            <text x="114" y="117">analyst</text>
+          </g>
+          <text class="tree-model" x="306" y="117">claude-sonnet-4-5</text>
+
+          <g class="tree-node">
+            <rect x="166" y="160" width="196" height="46" rx="12"/>
+            <text x="186" y="189">fact_checker</text>
+          </g>
+          <text class="tree-model" x="378" y="189">gpt-4o-mini</text>
+        </svg>
+        <p class="tree-cap">The tree from the README's DeepAgent snippet: three agents, two
+          providers, one <code>run()</code>. Working versions in
+          <code>examples/06_deep_agent.cpp</code> and <code>16_deep_agent_custom.cpp</code>.</p>
+      </div>
+    </article>
+
+    <div class="cards">
+
+      <article class="card">
+        <h3>Middleware, one signature</h3>
+        <p>A middleware takes the mutable message vector and a <code>Next</code> it must
+        call to reach the model. That is enough to rewrite the prompt, short-circuit
+        without calling the model, retry by calling <code>next</code> twice, or fall back
+        to another provider. Fourteen ship built in.
+        <code>make_middleware_stack()</code> folds the same callables through a
+        <code>std::tuple</code> with no <code>std::function</code> and no allocation.</p>
+      </article>
+
+      <article class="card">
+        <h3>Providers behind concepts</h3>
+        <p>There is no <code>IChatModel</code>. A provider is a full specialization of
+        <code>LLMModel&lt;Provider, Kind&gt;</code> that satisfies a concept, so the model
+        call is direct: no vtable, no type erasure. Seven ship, and adding one is a header
+        rather than a change to the core.</p>
+        <ul class="chips">
+          <li>OpenAI</li><li>Anthropic</li><li>Gemini</li><li>Mistral</li>
+          <li>Cohere</li><li>VoyageAI</li><li>Ollama</li><li>llama.cpp</li><li>vLLM</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h3>MCP, both transports</h3>
+        <p>stdio and HTTP, with no paid tier gating either one.
+        <code>mcp::connect_stdio()</code> and the HTTP client discover tools from a running
+        server and hand them to an agent the same way as any other tool.</p>
+      </article>
+
+      <article class="card">
+        <h3>Real SSE streaming</h3>
+        <p>Token deltas off the wire, tool-call deltas included, on the OpenAI-compatible
+        and Anthropic paths. <code>run_stream()</code> drives the full ReAct loop while the
+        text arrives. Streaming is a separate concept refinement, so providers without it
+        still satisfy <code>is_chat</code> and the agent branches with
+        <code>if constexpr</code>.</p>
+      </article>
+
+      <article class="card">
+        <h3>Retrieval and vector stores</h3>
+        <p>One four-method concept behind all seven backends: Flat and hnswlib in process,
+        Qdrant, Chroma, Weaviate, Redis and Milvus over the network. Embeddings and batch
+        are in the box.</p>
+      </article>
+
+      <article class="card">
+        <h3>Tracing and Agent Skills</h3>
+        <p>Spans go to Arize Phoenix, Langfuse, or any OTLP collector, with no vendor SDK
+        in the build. <a href="https://agentskills.io">Agent Skills</a> load from
+        <code>SKILL.md</code>, which no other C++ framework does.</p>
+      </article>
+
+    </div>
+
+    <p class="also">Also shipping: context management against an explicit token budget,
+      multimodal messages, <code>init_chat_model("openai:gpt-4o")</code> for provider
+      selection at runtime, and <code>Runnable</code> composition with
+      <code>operator|</code>.</p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  BENCHMARKS  ───────────────────────────── -->
+<section class="section" id="benchmarks">
+  <div class="wrap">
+    <p class="eyebrow">measured, not estimated</p>
+    <h2 class="h2">On the actual hardware</h2>
+    <p class="section-lede">Same source tree, same model, same quantization, three machines.
+      Every figure below came off a device on 2026-08-21 with the commands recorded in the repo.</p>
+
+    <div class="tablewrap">
+      <table class="datasheet">
+        <caption class="visually-hidden">Measured footprint and performance by device</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-metric">Metric</th>
+            <th scope="col">Raspberry Pi 5<span>16GB, aarch64, CPU</span></th>
+            <th scope="col">Jetson Orin Nano Super<span>8GB, aarch64, CUDA</span></th>
+            <th scope="col">macOS arm64<span>M-series</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Streaming example, stripped Release binary</th>
+            <td><b>7.4</b> <i>MB</i></td><td><b>7.6</b> <i>MB</i></td><td><b>7.7</b> <i>MB</i></td>
+          </tr>
+          <tr>
+            <th scope="row">Peak client RSS during a streamed response</th>
+            <td><b>2.0</b> <i>MB</i></td><td><b>5.1</b> <i>MB</i></td><td class="na">not measured</td>
+          </tr>
+          <tr>
+            <th scope="row">Generation speed, Qwen2.5-3B-Instruct Q4_K_M</th>
+            <td><b>5.48</b> <i>tok/s</i></td><td><b>23.85</b> <i>tok/s</i></td><td class="na">not measured</td>
+          </tr>
+          <tr>
+            <th scope="row">Prompt eval speed</th>
+            <td class="na">not reported</td><td><b>874.77</b> <i>tok/s</i></td><td class="na">not measured</td>
+          </tr>
+          <tr>
+            <th scope="row">Offline ctest suite, on device</th>
+            <td><b>20/20</b> <i>0.06 s</i></td><td><b>20/20</b> <i>0.16 s</i></td><td class="na">not measured</td>
+          </tr>
+          <tr>
+            <th scope="row">Clean full Release build</th>
+            <td><b>647</b> <i>s</i></td><td><b>524</b> <i>s</i></td><td class="na">not measured</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note">The Jetson's 5.1 MB against the Pi's 2.0 MB is the toolchain, not the
+      workload: g++ 11.4 on JetPack 6.2 there, g++ 14.2 on Debian 13 on the Pi. Peak RSS
+      held at 5.0 to 5.2 MB across five Jetson runs whether the GPU was doing the work or
+      not. Pi prompt-eval is left out of this run because the fixed prompt hit the server's
+      KV cache and the number would have flattered it.</p>
+
+    <h3 class="sub">Agent layer, on the Pi 5</h3>
+    <p class="section-lede">What the orchestration itself costs, from <code>bench_agent</code>
+      on the same board.</p>
+    <div class="tablewrap">
+      <table class="datasheet micro">
+        <tbody>
+          <tr><th scope="row">Tool lookup, 20 tools</th><td><b>130</b> <i>ns</i></td><td class="rate">7.2M ops/s</td></tr>
+          <tr><th scope="row">Static middleware chain, 5 deep</th><td><b>74</b> <i>ns</i></td><td class="rate">12.4M ops/s</td></tr>
+          <tr><th scope="row">Runtime middleware chain, 5 deep</th><td><b>667</b> <i>ns</i></td><td class="rate">1.5M ops/s</td></tr>
+          <tr><th scope="row">Agent run, full stack</th><td><b>9.4</b> <i>µs</i></td><td class="rate">105.7K ops/s</td></tr>
+          <tr><th scope="row">Static versus runtime middleware, depth 10</th><td><b>26.3</b> <i>×</i></td><td class="rate">compile-time chain</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Full methodology, the raw <code>bench_agent</code> output and the
+      on-device bootstrap are in
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>,
+      with per-device proofs for the
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/proofs/pi5-bench.md">Pi 5</a> and the
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/proofs/jetson-bench.md">Jetson</a>.</p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  QUICKSTART  ───────────────────────────── -->
+<section class="section section-wash" id="quickstart">
+  <div class="wrap">
+    <p class="eyebrow">quickstart</p>
+    <h2 class="h2">Five lines to a running agent</h2>
+    <div class="qs-grid">
+      <div class="qs-copy">
+        <p>You need CMake 3.20 or newer, a C++20 compiler, and
+          <a href="https://github.com/microsoft/vcpkg">vcpkg</a> with <code>VCPKG_ROOT</code>
+          set. Configuring installs <code>nlohmann-json</code>, <code>cpp-httplib</code>
+          with OpenSSL, <code>doctest</code>, <code>libenvpp</code> and
+          <code>json-schema-validator</code>. The library target itself only needs the
+          first two; the rest are for tests.</p>
+        <p>On Windows PowerShell the same commands work with
+          <code>$env:VCPKG_ROOT = "C:\src\vcpkg"</code> and <code>--config Debug</code> on
+          the build and test steps.</p>
+      </div>
+
+      <div class="qs-panels">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">build and run</span>
+            <button class="copy" data-copy="qs-build" type="button">Copy</button>
+          </div>
+          <div class="panel-body" id="qs-build"><pre><code><span class="k">export</span> VCPKG_ROOT=<span class="s">"$HOME/src/vcpkg"</span>
+<span class="k">export</span> OPENAI_API_KEY=<span class="s">"your-key-here"</span>
+
+cmake --preset default          <span class="c"># or --preset release</span>
+cmake --build --preset default
+./build/examples/01_basic_chat</code></pre></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">vendor it into your build</span>
+            <button class="copy" data-copy="qs-cmake" type="button">Copy</button>
+          </div>
+          <div class="panel-body" id="qs-cmake"><pre><code><span class="f">add_subdirectory</span>(external/tiny_agent_cpp)
+<span class="f">target_link_libraries</span>(my_app <span class="k">PRIVATE</span> tiny_agent)</code></pre></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Prefer an install? <code>cmake --install</code> and
+      <code>find_package(tiny_agent CONFIG REQUIRED)</code> work too, and
+      <code>ports/tiny-agent</code> in the repo is a working vcpkg overlay port until it
+      upstreams. Set <code>TINY_AGENT_BUILD_EXAMPLES</code>,
+      <code>TINY_AGENT_BUILD_TESTS</code> and <code>TINY_AGENT_BUILD_BENCH</code> to
+      <code>OFF</code> for a vendored build.</p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  FAQ  ───────────────────────────── -->
+<section class="section" id="faq">
+  <div class="wrap wrap-narrow">
+    <p class="eyebrow">faq</p>
+    <h2 class="h2">Questions people actually ask</h2>
+
+    <details class="qa">
+      <summary>Is it really header-only, and what are the dependencies?</summary>
+      <div class="qa-body"><p>Yes. <code>#include &lt;tiny_agent/tiny_agent.hpp&gt;</code>
+        and you are building against headers, with no separate library step. The library
+        itself needs nlohmann-json and cpp-httplib with OpenSSL; doctest, libenvpp and
+        json-schema-validator are test-only. <code>TINY_AGENT_HNSWLIB</code> pulls in
+        hnswlib if you want that vector store, off by default.</p></div>
+    </details>
+
+    <details class="qa">
+      <summary>Does it run fully offline and local?</summary>
+      <div class="qa-body"><p>Against a local server, yes. Point
+        <code>local::llamacpp()</code>, <code>local::ollama()</code> or
+        <code>local::vllm()</code> at a server on your machine or LAN and nothing leaves
+        it. The offline test suite runs the same way, 383 cases with no network and no
+        keys. Cloud providers need a connection, obviously; the agent code does not change
+        either way.</p></div>
+    </details>
+
+    <details class="qa">
+      <summary>How small is it really?</summary>
+      <div class="qa-body"><p>A complete streaming agent example is a 7.7 MB stripped
+        binary on macOS arm64 with TLS included, and 7.4 to 7.6 MB on a Raspberry Pi 5 or a
+        Jetson Orin Nano. Client RSS while streaming from a local llama.cpp server measured
+        2.0 MB on the Pi 5.</p></div>
+    </details>
+
+    <details class="qa">
+      <summary>How do agents call other agents?</summary>
+      <div class="qa-body"><p><code>agent_as_tool()</code> wraps a
+        <code>shared_ptr&lt;Agent&gt;</code> in a <code>DynamicTool</code> with a JSON
+        schema, so a director agent calls an analyst agent the same way it calls any
+        function, and the analyst can call a fact-checker in turn. Each sub-agent can run a
+        different model from a different provider. That is the whole mechanism behind
+        DeepAgent: no separate delegation concept, just a tool.</p></div>
+    </details>
+
+    <details class="qa">
+      <summary>What C++ standard and compilers does it need?</summary>
+      <div class="qa-body"><p>C++20, set by <code>CMAKE_CXX_STANDARD 20</code> in the
+        build. CI compiles and runs the test suite on every push across Linux x64 and
+        arm64, macOS arm64, and Windows x64. One known gap:
+        <code>16_deep_agent_custom.cpp</code> does not compile on g++ 11.4, which keeps two
+        <code>init_chat_model</code> overloads in the candidate set for a braced
+        initializer. Newer GCC and Clang resolve it fine.</p></div>
+    </details>
+
+    <details class="qa">
+      <summary>What is the license?</summary>
+      <div class="qa-body"><p>MIT, copyright Riadh Haj Amor. Vendor it, link it, modify it,
+        ship it inside a closed-source or commercial product, all without asking. The only
+        obligation is keeping the copyright notice and license text with the code you took
+        it from.</p></div>
+    </details>
+
+    <p class="faq-more">The rest of the FAQ, the provider list and the platform notes live
+      in the <a href="https://github.com/rhajamor/tiny_agent/blob/main/README.md">README</a>.</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <p class="footer-word">tiny_agent</p>
+      <p class="footer-tag">A header-only C++20 agent framework for the edge.</p>
+      <p class="footer-license">MIT licensed. Copyright &copy; 2026 Riadh Haj Amor.
+        <a href="https://github.com/rhajamor/tiny_agent/blob/main/LICENSE">Full text</a>.</p>
+    </div>
+    <nav class="footer-nav" aria-label="Repository">
+      <p class="footer-head">Repository</p>
+      <a href="https://github.com/rhajamor/tiny_agent">GitHub</a>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/README.md">README</a>
+      <a href="https://github.com/rhajamor/tiny_agent/tree/main/examples">Examples</a>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/CONTRIBUTING.md">Contributing</a>
+    </nav>
+    <nav class="footer-nav" aria-label="Documentation">
+      <p class="footer-head">Docs</p>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/benchmarks.md">Benchmarks</a>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/observability.md">Observability</a>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/vector-stores.md">Vector stores</a>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/context-management.md">Context management</a>
+      <a href="https://github.com/rhajamor/tiny_agent/blob/main/docs/integrations.md">Integration status</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>
