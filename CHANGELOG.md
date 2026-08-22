@@ -17,6 +17,8 @@ Everything merged since the `v0.3.0` tag.
 - Repositioned the README around what the library actually is.
 - Fixed explicit includes and non-ASCII literals that broke the non-Clang CI
   platforms.
+- Fixed the `init_chat_model` overload ambiguity that stopped
+  `16_deep_agent_custom.cpp` compiling on g++ 11.4.
 
 ## [0.3.0] - 2026-08-21
 

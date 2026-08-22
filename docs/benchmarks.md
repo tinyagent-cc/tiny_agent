@@ -108,12 +108,14 @@ silicon still posts better numbers than this board on several rows. If you are s
 latency-sensitive on a Jetson, a newer toolchain than the one JetPack 6.2 ships is worth
 having.
 
-One example does not compile on g++ 11.4. `16_deep_agent_custom.cpp` calls
+One example did not compile on g++ 11.4 when this run was taken.
+`16_deep_agent_custom.cpp` calls
 `init_chat_model("openai:gpt-4o-mini", {.api_key = key})`, and g++ 11 keeps both the
 two-argument and three-argument overloads in the candidate set when the second argument is a
 braced initializer, then cannot choose. Clang and newer GCC discard the wrong candidate. The
-other 52 targets, the whole test suite and the bench build clean; the failure is recorded
-rather than patched, since the fix belongs in a code change.
+other 52 targets, the whole test suite and the bench built clean. The three-argument overload
+has since been constrained so a braced initializer can never select it (issue #12), and the
+example builds on g++ 11.4.
 
 Full commands, raw build/test/bench output, the CUDA bring-up and the RSS methodology are in
 [`docs/proofs/jetson-bench.md`](proofs/jetson-bench.md).

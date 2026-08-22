@@ -419,9 +419,9 @@ mechanism behind DeepAgent: no separate delegation concept, just a tool.
 **What C++ standard and compilers does it need?**
 C++20, set by `CMAKE_CXX_STANDARD 20` in the build. CI compiles and runs the
 test suite on every push across Linux x64 and arm64, macOS arm64, and
-Windows x64. One known gap: `16_deep_agent_custom.cpp` doesn't compile on
-g++ 11.4, which keeps two `init_chat_model` overloads in the candidate set
-for a braced initializer; newer GCC and Clang resolve it fine.
+Windows x64. g++ 11.4, the oldest GCC claiming C++20 support, builds the
+tree; the `init_chat_model` overload ambiguity that used to break
+`16_deep_agent_custom.cpp` there is fixed.
 
 **What's the license?**
 MIT, copyright Riadh Haj Amor. Vendor it, link it, modify it, ship it inside

@@ -98,3 +98,11 @@ TEST_CASE("init_chat_model two-arg overload") {
                                LLMConfig{.api_key = "fake"});
     CHECK(llm.model_name() == "gpt-4o-mini");
 }
+
+// Issue #12: a bare braced config must not make the provider+model overload
+// viable. g++ 11 read the list as `{key}` and called the overload set ambiguous.
+TEST_CASE("init_chat_model takes a bare braced config") {
+    const char* key = "fake";
+    auto llm = init_chat_model("openai:gpt-4o-mini", {.api_key = key});
+    CHECK(llm.model_name() == "gpt-4o-mini");
+}

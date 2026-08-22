@@ -4,6 +4,7 @@
 #include "providers/anthropic.hpp"
 #include "providers/gemini.hpp"
 #include <algorithm>
+#include <concepts>
 
 namespace tiny_agent {
 
@@ -50,10 +51,19 @@ inline AnyChat init_chat_model(const std::string& model_string,
                 "' (supported: openai, anthropic, gemini)");
 }
 
+// `model` is a template parameter, not a plain `const std::string&`, so that a
+// braced initializer can never select this overload. g++ 11 drops the designator
+// in `init_chat_model("openai:gpt-4o-mini", {.api_key = key})` and reads the list
+// as a plain `{key}`, which makes `const char*` -> `std::string` a viable second
+// argument here; both overloads then stay in the candidate set and the call is
+// ambiguous (issue #12). A braced-init-list is a non-deduced context, so this
+// candidate now drops out before that comparison on every compiler.
+template<typename Model>
+    requires std::constructible_from<std::string, const Model&>
 inline AnyChat init_chat_model(const std::string& provider,
-                               const std::string& model,
+                               const Model& model,
                                LLMConfig config = {}) {
-    return init_chat_model(provider + ":" + model, std::move(config));
+    return init_chat_model(provider + ":" + std::string(model), std::move(config));
 }
 
 } // namespace tiny_agent
