@@ -313,7 +313,7 @@ or in a manifest project, add an `"overlay-ports"` entry to
 
 ## Examples
 
-Twenty numbered examples plus eleven middleware ones.
+Twenty-one numbered examples plus eleven middleware ones.
 
 | | |
 |---|---|
@@ -328,8 +328,9 @@ Twenty numbered examples plus eleven middleware ones.
 | `15`, `20` | LLM summarization, context management |
 | `17` | SSE streaming against Ollama or llama.cpp |
 | `18` | tracing to Phoenix, Langfuse or stderr |
+| `21` | reflexes and guardrails via rete_cpp (optional, needs `TINY_AGENT_RETE_DIR` or `TINY_AGENT_FETCH_RETE`) |
 
-Most need `OPENAI_API_KEY`. `18`, `19` and `20` run without one. The MCP example
+Most need `OPENAI_API_KEY`. `18`, `19`, `20` and `21` run without one. The MCP example
 takes the server command on the command line and needs Node:
 
 ```bash
@@ -362,10 +363,28 @@ MILVUS_URL=http://localhost:19530 ctest --preset default -R test_vs_milvus
 - [Observability](docs/observability.md): tracing, exporters, Phoenix, Langfuse
 - [Vector stores](docs/vector-stores.md): the store concept, Qdrant, Chroma, Weaviate, Redis, Milvus
 - [Integration status](docs/integrations.md): live-verified backends versus offline-only, per integration
-- **Reflexes and guardrails**: pair with [rete_cpp](https://github.com/tinyagent-cc/rete_cpp) via `middleware/reflex.hpp`, rules answer the easy cases in microseconds, and veto bad tool calls before dispatch. (Landing with the reflex-middleware plan.)
 - [Context management](docs/context-management.md): token budgets and compaction
 - [Benchmarks](docs/benchmarks.md): binary size, RSS, time to first token
 - [Direction](docs/direction-2026-08.md): where this is going and why
+
+### Reflexes and guardrails (rete_cpp)
+
+Pair tiny_agent with [rete_cpp](https://github.com/tinyagent-cc/rete_cpp) and
+the middleware answers the easy cases before the model runs: a Rete rule that
+matches returns in microseconds and spends zero tokens, and after the model
+runs, guardrail rules veto or rewrite tool calls deterministically.
+
+```cpp
+middleware::ReflexEngine rx;
+rx.engine().add_rule("ping")
+    .when("msg", "text", "ping")
+    .then([&](auto&, auto&) { rx.outcome().respond("pong"); })
+    .build();
+chain.add(rx.middleware({.extract_facts = middleware::message_facts}));
+```
+
+Build with `-DTINY_AGENT_RETE_DIR=/path/to/rete_cpp` (or
+`-DTINY_AGENT_FETCH_RETE=ON`). See `examples/21_reflex_agent.cpp`.
 
 ## Platform notes
 

@@ -31,4 +31,13 @@ foreach(ex ${EXAMPLES})
     target_link_libraries(${ex} PRIVATE tiny_agent)
 endforeach()
 
+# ── Reflex example (optional rete_cpp integration) ────────────────────────
+# RETE_INCLUDE_DIR is resolved in the top-level CMakeLists.txt; empty unless
+# TINY_AGENT_RETE_DIR or TINY_AGENT_FETCH_RETE is set, same guard test_reflex uses.
+if(RETE_INCLUDE_DIR)
+    add_executable(21_reflex_agent 21_reflex_agent.cpp)
+    target_include_directories(21_reflex_agent PRIVATE ${RETE_INCLUDE_DIR})
+    target_link_libraries(21_reflex_agent PRIVATE tiny_agent)
+endif()
+
 add_subdirectory(middleware)

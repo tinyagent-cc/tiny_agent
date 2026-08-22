@@ -2,24 +2,10 @@ find_package(libenvpp CONFIG REQUIRED)
 find_package(nlohmann_json_schema_validator REQUIRED)
 
 # ── Reflex middleware (optional rete_cpp integration) ────────────────────────
-# Header-only rete_cpp is opt-in: point TINY_AGENT_RETE_DIR at a local checkout,
-# or set TINY_AGENT_FETCH_RETE to pull it from GitHub. Neither set -> test_reflex
-# is skipped and the suite stays fully offline.
-
-set(TINY_AGENT_RETE_DIR "" CACHE PATH "Local rete_cpp checkout (header-only)")
-option(TINY_AGENT_FETCH_RETE "Fetch rete_cpp from GitHub for reflex tests" OFF)
-
-set(RETE_INCLUDE_DIR "")
-if(TINY_AGENT_RETE_DIR)
-  set(RETE_INCLUDE_DIR "${TINY_AGENT_RETE_DIR}/include")
-elseif(TINY_AGENT_FETCH_RETE)
-  include(FetchContent)
-  FetchContent_Declare(rete_cpp
-    GIT_REPOSITORY https://github.com/tinyagent-cc/rete_cpp.git
-    GIT_TAG 4c2e6c3a94b6759bc710c26d8d601eecb3cec2e3)   # master, pinned 2026-08-22
-  FetchContent_MakeAvailable(rete_cpp)
-  set(RETE_INCLUDE_DIR "${rete_cpp_SOURCE_DIR}/include")
-endif()
+# RETE_INCLUDE_DIR is resolved once in the top-level CMakeLists.txt (TINY_AGENT_RETE_DIR
+# or TINY_AGENT_FETCH_RETE) so examples/ and tests/ share the same rete_cpp checkout.
+# Neither set -> RETE_INCLUDE_DIR is empty, test_reflex is skipped, and the suite
+# stays fully offline.
 
 if(RETE_INCLUDE_DIR)
   add_executable(test_reflex test_reflex.cpp)
@@ -60,6 +46,15 @@ foreach(t ${UNIT_TESTS})
     target_link_libraries(${t} PRIVATE tiny_agent doctest::doctest)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
+
+# test_readme_snippets compiles every code block in README.md verbatim; the
+# reflex block is optional like everything else rete_cpp, so it only builds
+# when RETE_INCLUDE_DIR is set (see top-level CMakeLists.txt) rather than
+# making rete_cpp a hard dependency of the always-on offline suite.
+if(RETE_INCLUDE_DIR)
+    target_include_directories(test_readme_snippets PRIVATE ${RETE_INCLUDE_DIR})
+    target_compile_definitions(test_readme_snippets PRIVATE TINY_AGENT_HAS_RETE)
+endif()
 
 # ── Agent tests (real models, require API keys from .env) ────────────────────
 

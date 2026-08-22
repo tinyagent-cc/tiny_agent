@@ -62,6 +62,27 @@ install(FILES
     DESTINATION ${TINY_AGENT_CMAKE_DIR}
 )
 
+# --- Optional: rete_cpp for reflex middleware (used by examples/ and tests/) ---
+# Header-only rete_cpp is opt-in: point TINY_AGENT_RETE_DIR at a local checkout,
+# or set TINY_AGENT_FETCH_RETE to pull it from GitHub. Neither set -> the reflex
+# example and test_reflex are skipped and the build stays fully offline.
+# Resolved here, not in examples/ or tests/, so both subdirectories see the
+# same RETE_INCLUDE_DIR.
+set(TINY_AGENT_RETE_DIR "" CACHE PATH "Local rete_cpp checkout (header-only)")
+option(TINY_AGENT_FETCH_RETE "Fetch rete_cpp from GitHub for reflex middleware" OFF)
+
+set(RETE_INCLUDE_DIR "")
+if(TINY_AGENT_RETE_DIR)
+  set(RETE_INCLUDE_DIR "${TINY_AGENT_RETE_DIR}/include")
+elseif(TINY_AGENT_FETCH_RETE)
+  include(FetchContent)
+  FetchContent_Declare(rete_cpp
+    GIT_REPOSITORY https://github.com/tinyagent-cc/rete_cpp.git
+    GIT_TAG 4c2e6c3a94b6759bc710c26d8d601eecb3cec2e3)   # master, pinned 2026-08-22
+  FetchContent_MakeAvailable(rete_cpp)
+  set(RETE_INCLUDE_DIR "${rete_cpp_SOURCE_DIR}/include")
+endif()
+
 # --- Subdirectories ---
 option(TINY_AGENT_BUILD_EXAMPLES "Build examples" ON)
 option(TINY_AGENT_BUILD_TESTS    "Build tests"    ON)

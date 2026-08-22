@@ -41,7 +41,7 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Configure
-        run: cmake --preset default
+        run: cmake --preset default -DTINY_AGENT_FETCH_RETE=ON
 
       - name: Build
         run: cmake --build --preset default

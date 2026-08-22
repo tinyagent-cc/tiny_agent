@@ -320,3 +320,14 @@ TEST_CASE("rete_tool is stateless across invocations") {
     auto out = tool({{"facts", json::array()}});
     CHECK(out["facts"].empty());
 }
+
+TEST_CASE("rete_tool with no setup throws ToolError") {
+    CHECK_THROWS_AS(tools::rete_tool({.name = "t", .description = "d"}), ToolError);
+}
+
+TEST_CASE("rete_tool rejects a malformed fact") {
+    auto tool = tools::rete_tool({
+        .name = "t", .description = "d",
+        .setup = [](rete::ReteEngine&) {}});
+    CHECK_THROWS_AS(tool({{"facts", {{"only", "two"}}}}), ToolError);
+}
