@@ -143,4 +143,30 @@ public:
     }
 };
 
+inline std::vector<Fact> message_facts(const std::vector<Message>& msgs) {
+    std::vector<Fact> facts;
+    for (auto it = msgs.rbegin(); it != msgs.rend(); ++it) {
+        if (it->role == Role::system) continue;
+        facts.push_back({std::string("msg"), std::string("role"),
+                         std::string(to_string(it->role))});
+        facts.push_back({std::string("msg"), std::string("text"), it->text()});
+        break;
+    }
+    return facts;
+}
+
+inline std::vector<Fact> tool_call_facts(const LLMResponse& resp) {
+    std::vector<Fact> facts;
+    for (size_t i = 0; i < resp.message.tool_calls.size(); ++i) {
+        auto& tc = resp.message.tool_calls[i];
+        std::string id = "call-" + std::to_string(i);
+        facts.push_back({id, std::string("tool"), tc.name});
+        facts.push_back({id, std::string("index"), static_cast<int64_t>(i)});
+        if (tc.arguments.is_object())
+            for (auto& [k, v] : tc.arguments.items())
+                facts.push_back({id, "arg:" + k, integrations::to_rete_value(v)});
+    }
+    return facts;
+}
+
 } // namespace tiny_agent::middleware

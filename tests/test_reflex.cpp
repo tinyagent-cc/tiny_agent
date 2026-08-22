@@ -267,3 +267,25 @@ TEST_CASE("a clean response passes the guardrail untouched") {
     CHECK(resp.message.tool_calls[0].name == "express");
     CHECK_FALSE(resp.raw.contains("reflex_vetoes"));
 }
+
+TEST_CASE("message_facts describes the last non-system message") {
+    std::vector<Message> msgs = {Message::system("sys"), Message::user("hello world")};
+    auto facts = middleware::message_facts(msgs);
+    REQUIRE(facts.size() == 2);
+    CHECK(std::get<std::string>(facts[0][0]) == "msg");
+    CHECK(std::get<std::string>(facts[0][1]) == "role");
+    CHECK(std::get<std::string>(facts[0][2]) == "user");
+    CHECK(std::get<std::string>(facts[1][1]) == "text");
+    CHECK(std::get<std::string>(facts[1][2]) == "hello world");
+}
+
+TEST_CASE("tool_call_facts flattens calls and scalar args") {
+    auto resp = model_calls_tool("led", {{"r", 255}, {"nested", {{"x", 1}}}});
+    auto facts = middleware::tool_call_facts(resp);
+    // nlohmann::json objects iterate in sorted key order, so "arg:nested"
+    // comes out before "arg:r": ("call-0","tool","led"), ("call-0","index",0),
+    // ("call-0","arg:nested","{\"x\":1}"), ("call-0","arg:r",255)
+    REQUIRE(facts.size() == 4);
+    CHECK(std::get<std::string>(facts[0][2]) == "led");
+    CHECK(std::get<int64_t>(facts[1][2]) == 0);
+}
