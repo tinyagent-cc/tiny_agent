@@ -428,3 +428,7 @@ code { font-family: var(--mono); font-size: 0.86em; background: var(--wash); col
   .topbar, .navtoggle, .copy { display: none; }
   body { background: #fff; }
 }
+
+@media print {
+  .reveal { opacity: 1; transform: none; }
+}
