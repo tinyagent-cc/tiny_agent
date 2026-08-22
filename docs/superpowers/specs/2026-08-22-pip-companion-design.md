@@ -68,18 +68,40 @@ MPI3508, TTS/speech (chirps only), NS4168 (kept spare), battery power.
 - WiFi credentials + brain URL in a `config.h` generated from
   `config.example.h`; never committed.
 
-### Brain: tiny_agent + rete_cpp on the Pi Zero 2 W
+### The reflex integration: tiny_agent gains `middleware/reflex.hpp`
 
-One C++ process, in `pip/brain/`:
+Amended 2026-08-22 after spec review: the rete_cpp wiring is a tiny_agent
+product feature, not Pip-private code. Three shapes, one dependency rule —
+tiny_agent optionally includes rete_cpp; rete_cpp never learns about
+tiny_agent and stays a standalone C++17 engine.
 
-- **Reflex layer (rete_cpp)**: events become facts; rules fire body calls
-  directly. Examples: `button.press -> wink + chirp(rise)` (target: reaction
+- **`middleware/reflex.hpp`** in tiny_agent, following the existing
+  optional-integration-header pattern (compiles only when rete_cpp is on
+  the include path; C++17 headers under the C++20 build). Two hooks:
+  - *Pre-LLM reflex*: incoming events/requests are asserted as facts; if a
+    rule fires, the middleware short-circuits the loop and answers without
+    a model call. Zero tokens, microseconds.
+  - *Post-LLM guardrail*: the model's proposed tool calls are asserted as
+    facts; rules veto or rewrite them deterministically before dispatch.
+- **`tools/rete_tool.hpp`**: a thin adapter exposing a ruleset as a
+  callable tool, so the agent can consult an expert system on demand.
+  rete_cpp's medical_diagnosis example becomes its demo. Reflex acts
+  instead of the model, guardrail acts on the model, the tool acts for it.
+- Unit tests host-side for all three; documented in tiny_agent's
+  integrations matrix.
+
+### Brain: Pip as the demo of the reflex middleware, on the Pi Zero 2 W
+
+One C++ process, in `pip/brain/`, built on the middleware above:
+
+- **Reflex rules**: `button.press -> wink + chirp(rise)` (target: reaction
   under 50ms end-to-end on LAN), `light.low sustained -> express(sleepy)`,
   `light.high after low -> express(alert) + chirp(trill)`,
   `temp > threshold -> express(alert) + led(red)`. Refraction stops
-  re-firing; the agenda's conflict resolution is the demo of rete_cpp doing
-  real work.
-- **Judgment layer (tiny_agent)**: fires only on `button.hold` ("talk to
+  re-firing; the agenda's conflict resolution is rete_cpp doing real work.
+- **Guardrail rules**: cap LED brightness at night (light.low), rate-limit
+  chirps. Small, but shows the post-LLM hook live.
+- **Judgment layer (tiny_agent)**: wakes only on `button.hold` ("talk to
   me") and on events no rule matched. The agent gets Pip's tools (express,
   chirp, led, senses) plus recent event history in context, and decides the
   reaction. Model access via the OpenAI-compatible provider pointed at the
@@ -92,9 +114,10 @@ One C++ process, in `pip/brain/`:
 ### Interfaces
 
 Body and brain share one JSON contract, versioned in `pip/PROTOCOL.md`.
-The brain treats the body as a tiny_agent toolset; nothing in tiny_agent
-core changes for Pip. If the on-Pico spike (track 3) is a go, the same
-protocol lets the loop migrate onto the Pico without redesign.
+The brain treats the body as a tiny_agent toolset; Pip's only tiny_agent
+footprint is the reflex middleware and tool adapter described above. If
+the on-Pico spike (track 3) is a go, the same protocol lets the loop
+migrate onto the Pico without redesign.
 
 ### Testing
 
@@ -153,7 +176,9 @@ one day equivalent. Anything built is labeled throwaway.
 1. Org face-lift (hours) and Pip repo scaffold.
 2. Pip firmware: face engine first (filmable on day one), then tools/events,
    then audio.
-3. Brain: reflex layer, then agent layer, then end-to-end demo film.
+3. Reflex middleware + tool adapter in tiny_agent (host-side, testable
+   without hardware; can start parallel to firmware), then Pip's brain on
+   top of it, then end-to-end demo film.
 4. Bake-off harness and first results (needs only Pi 5 + llama.cpp; can
    start parallel to firmware).
 5. Spike report.
