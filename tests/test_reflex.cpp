@@ -27,9 +27,11 @@ TEST_CASE("json <-> rete::Value round-trips scalars") {
     CHECK(std::holds_alternative<std::monostate>(to_rete_value(json())));
     // non-scalar collapses to its compact dump, so no fact is ever lost silently
     CHECK(std::get<std::string>(to_rete_value(json::parse(R"({"a":1})"))) == R"({"a":1})");
+    CHECK(std::get<int64_t>(to_rete_value(json(5000000000ULL))) == 5000000000LL);
 
     CHECK(from_rete_value(rete::Value{std::string("hi")}) == json("hi"));
     CHECK(from_rete_value(rete::Value{int64_t{42}}) == json(42));
     CHECK(from_rete_value(rete::Value{true}) == json(true));
     CHECK(from_rete_value(rete::Value{std::monostate{}}) == json());
+    CHECK(from_rete_value(rete::Value{2.5}) == json(2.5));
 }
