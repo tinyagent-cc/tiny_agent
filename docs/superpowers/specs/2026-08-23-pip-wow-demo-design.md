@@ -161,10 +161,14 @@ hold now means "talk to me".
   frame from `/dev/video0` (OpenCV or `v4l2-ctl`), sends it with the
   question to the local llama-server multimodal chat (`/v1/chat/completions`
   with an `image_url` data URI), returns `{"text","ms"}`; `GET /health`.
-  llama-server on the Jetson serves `Qwen2.5-VL-3B-Instruct` Q4 + mmproj on
-  :8081 for both text (tool calls) and vision. **Probe first** (plan task):
-  tool calling through the VL template; if it fails, keep Qwen2.5-3B text on
-  :8081 and run VL on :8082 for `/see` only. Memory budget 8 GB shared.
+  Probed 2026-08-23: Qwen2.5-VL-3B on this llama.cpp build returns no
+  `tool_calls`, breaks image answers at 4k context, and fills the 8 GB. So
+  the Jetson runs two servers: `Qwen2.5-3B-Instruct` Q4 (text, tool calls,
+  GPU) on :8081 for judgment, and a small VLM (SmolVLM-500M-Instruct class
+  GGUF + mmproj, or Qwen2.5-VL-3B with `--image-min-tokens 1024 -c 8192` only
+  if the small one is not good enough) on :8082 for `/see`. whisper.cpp
+  (CUDA, `base.en`) for `/listen`. Plan C's first task measures the trio's
+  resident memory and latency; budget: under 6.5 GB with no swap in use.
 - `services/voice/` (Pi 5, Python 3, systemd user unit): Piper TTS,
   `en_US-lessac-medium` (or another small voice, chosen by ear on the bench),
   resampled to 16 kHz s16 mono, pitch +2 semitones via `sox` or a Piper
