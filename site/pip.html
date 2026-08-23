@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Pip: a desk companion that shows its work</title>
+<meta name="description" content="Pip is a four-board desk companion built on tiny_agent: reflex rules on a Pi Zero answer in microseconds, a judgment agent on a Jetson answers in seconds, and the face on a Pico 2 W captions which one just spoke.">
+<link rel="canonical" href="https://tinyagent.cc/pip.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Pip: a desk companion that shows its work">
+<meta property="og:description" content="Reflexes are rules and cost microseconds. Judgment is an agent and costs seconds. Pip puts both on a 320x240 panel and captions which one answered.">
+<meta property="og:url" content="https://tinyagent.cc/pip.html">
+<meta name="theme-color" content="#00599C">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Page-local: the screen gallery. Everything else is style.css. */
+  .pip-hero-art { background: var(--surface); border: 1px solid var(--edge); border-radius: var(--radius); box-shadow: var(--e2); padding: 18px; }
+  .screen { display: block; width: 100%; height: auto; border-radius: 8px; image-rendering: pixelated; background: #05070d; }
+  .screen-cap { margin: 14px 0 0; font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
+
+  .fleet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 34px; }
+  .fleet .card { display: flex; flex-direction: column; gap: 6px; }
+  .fleet .role { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); margin: 0; }
+  .fleet h3 { font-size: 1.05rem; }
+  .fleet p { margin: 0; font-size: 14.5px; }
+
+  .scenes { display: grid; gap: 26px; }
+  .scene { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: center;
+           background: var(--surface); border: 1px solid var(--edge); border-radius: var(--radius);
+           box-shadow: var(--e1); padding: 24px; }
+  .scene > * { min-width: 0; }
+  .scene-name { font-family: var(--mono); font-size: 13px; color: var(--brand); margin: 0 0 8px; }
+  .scene h3 { font-size: 1.2rem; margin-bottom: 10px; }
+  .scene p { font-size: 15.5px; color: var(--ink-2); }
+  .scene .cmd { display: block; margin-top: 14px; font-family: var(--mono); font-size: 12.5px;
+                background: var(--wash); color: var(--brand-700); border-radius: 8px; padding: 10px 12px;
+                overflow-x: auto; white-space: pre; }
+  .pending { font-family: var(--mono); font-size: 12.5px; color: var(--ink-3); }
+
+  @media (max-width: 1040px) { .fleet { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 760px) { .scene { grid-template-columns: 1fr; gap: 20px; } }
+  @media (max-width: 620px) { .fleet { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar" id="top">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="index.html" aria-label="tiny_agent, home">
+      <svg class="brand-mark" viewBox="0 0 180 180" aria-hidden="true" focusable="false">
+        <rect x="0" y="0" width="180" height="180" rx="40" fill="#e8f1f9"/>
+        <g stroke="#00599C" stroke-width="7" stroke-linecap="round">
+          <line x1="52" y1="34" x2="52" y2="20"/><line x1="90" y1="30" x2="90" y2="16"/><line x1="128" y1="34" x2="128" y2="20"/>
+          <line x1="52" y1="146" x2="52" y2="160"/><line x1="90" y1="150" x2="90" y2="164"/><line x1="128" y1="146" x2="128" y2="160"/>
+        </g>
+        <rect x="34" y="38" width="112" height="104" rx="26" fill="#00599C"/>
+        <circle cx="68" cy="82" r="12" fill="#ffffff"/><circle cx="112" cy="82" r="12" fill="#ffffff"/>
+        <path d="M 66 112 Q 90 128 114 112" stroke="#ffffff" stroke-width="8" fill="none" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-word">tiny_agent</span>
+    </a>
+
+    <button class="navtoggle" id="navtoggle" aria-expanded="false" aria-controls="nav">
+      <span class="navtoggle-bars" aria-hidden="true"><i></i><i></i></span>
+      <span class="navtoggle-label">Menu</span>
+    </button>
+
+    <nav class="nav" id="nav" aria-label="Sections">
+      <a href="index.html#edge">Why edge</a>
+      <a href="index.html#benchmarks">Benchmarks</a>
+      <a href="#fleet">The fleet</a>
+      <a href="#scenes">Scenes</a>
+      <a class="nav-cta" href="https://github.com/tinyagent-cc/pip">Pip on GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ─────────────────────────────  HERO  ───────────────────────────── -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow rise" data-rise="1">built on tiny_agent · four boards · MIT</p>
+      <h1 class="rise" data-rise="2">Pip shows you<br>which brain answered.</h1>
+      <p class="lede rise" data-rise="3">
+        Press Pip's button and it winks before you let go: a Rete rule on a Pi Zero, no
+        tokens spent. Hold the button and it answers out loud seconds later, from a
+        tiny_agent loop on a Jetson. The strip under the face says which one just spoke.
+      </p>
+      <p class="actions rise" data-rise="4">
+        <a class="btn btn-primary" href="#scenes">See the scenes</a>
+        <a class="btn btn-ghost" href="https://github.com/tinyagent-cc/pip">
+          View on GitHub
+          <svg class="ext" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3h7.5v7.5M13 3 3.6 12.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </p>
+    </div>
+
+    <div class="pip-hero-art rise" data-rise="3">
+      <img class="screen" src="assets/pip/judge.png" width="640" height="480"
+           alt="Pip's screen: a violet thinking face over a speech bubble reading Let me think, and a status strip reading judge, 22C, jdg 9.7s, with the letters W F B C J.">
+      <p class="screen-cap">320x240 on the panel, rendered from the same C++ the Pico runs.
+        The bottom strip is the argument: <b>rfx</b> what the last rule cost,
+        <b>jdg</b> what the last model call cost, and <b>J</b> or <b>5</b> for which model
+        answered.</p>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="rail" aria-label="Measured on the bench">
+      <div class="rail-row">
+        <div class="spec">
+          <p class="spec-key">press to wink, over HTTP</p>
+          <p class="spec-val">757<span class="unit">ms</span></p>
+          <p class="spec-src">at the brain, body answering over WiFi</p>
+        </div>
+        <div class="spec">
+          <p class="spec-key">hold to spoken answer</p>
+          <p class="spec-val">9.8<span class="unit">s</span></p>
+          <p class="spec-src">four of them the microphone window, Jetson Orin Nano</p>
+        </div>
+        <div class="spec">
+          <p class="spec-key">camera frame to sentence</p>
+          <p class="spec-val">2.6<span class="unit">s</span></p>
+          <p class="spec-src">SmolVLM-500M on the Jetson, 1.0 s warm</p>
+        </div>
+        <div class="spec">
+          <p class="spec-key">Jetson resident, all three</p>
+          <p class="spec-val">4.09<span class="unit">GB</span></p>
+          <p class="spec-src">text model, VLM and cortex, against a 6.5 GB budget</p>
+        </div>
+      </div>
+      <p class="rail-foot">Measured 2026-08-23 on the named devices. The wire between the
+        Pico and the Pi Zero has not been timed yet, so the press number above is the HTTP
+        path, which is the slow one.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  FLEET  ───────────────────────────── -->
+<section class="section" id="fleet">
+  <div class="wrap">
+    <p class="eyebrow">four boards</p>
+    <h2 class="h2">One job each</h2>
+    <p class="section-lede">Reflexes are rules, judgment is an agent, and the two run on
+      different hardware so nobody has to take the claim on trust. The body only ever shows,
+      sounds and senses, which is why its face loop never waits on the LAN.</p>
+
+    <div class="fleet">
+      <article class="card">
+        <p class="role">body</p>
+        <h3>Pico 2 W</h3>
+        <p>The face, the status strip, the speech bubble, the button, light and temperature.
+          A framed UART link to the brain at 921600, with WiFi HTTP as the fallback when the
+          wire goes quiet.</p>
+      </article>
+      <article class="card">
+        <p class="role">brain</p>
+        <h3>Pi Zero 2 W</h3>
+        <p>Rete rules answer events with no model call at all. A tiny_agent loop wakes only
+          on a held button. The scene director runs the demo. One binary, built on the Pi 5,
+          deployed over SSH.</p>
+      </article>
+      <article class="card">
+        <p class="role">cortex</p>
+        <h3>Jetson Orin Nano</h3>
+        <p>Ears and eyes: whisper.cpp on CUDA for the microphone, a small VLM for the
+          camera, and Qwen2.5-3B-Instruct for the judgment itself. All three resident at
+          once.</p>
+      </article>
+      <article class="card">
+        <p class="role">fallback mind and voice</p>
+        <h3>Raspberry Pi 5</h3>
+        <p>Piper turns the answer into 16 kHz PCM that streams down the wire to the
+          speaker. A second llama-server stands by, so killing the Jetson changes the
+          latency and one letter on the HUD, not the behaviour.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  SCENES  ───────────────────────────── -->
+<section class="section section-wash" id="scenes">
+  <div class="wrap">
+    <p class="eyebrow">the demo</p>
+    <h2 class="h2">Six scenes, each one captioned</h2>
+    <p class="section-lede">Every scene is a script on the brain, started with one POST and
+      reachable by name. The screens below are dumped from the same rendering code the Pico
+      runs, so they are pixels rather than mockups.</p>
+
+    <div class="scenes">
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 1</p>
+          <h3>reflex</h3>
+          <p>Pip asks for a press and waits six seconds for a real one before staging the
+            press itself, which is what lets the same script run with nobody at the desk.
+            The wink is a rule firing: no model, no tokens.</p>
+          <code class="cmd">curl -X POST http://&lt;brain&gt;:8080/scene -d '{"name":"reflex"}'</code>
+        </div>
+        <img class="screen" src="assets/pip/reflex.png" width="640" height="480"
+             alt="Pip winking with a small smile, status strip captioned reflex.">
+      </article>
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 1, second beat</p>
+          <h3>judgment</h3>
+          <p>Hold the button and ask something out loud. Listening face, then thinking, then
+            the answer arrives spoken with the same words in the bubble. 9.8 s end to end on
+            2026-08-23, and the HUD carries both the time and the <code>J</code> that says
+            the Jetson answered.</p>
+          <code class="cmd">curl -s http://&lt;brain&gt;:8080/log?n=30</code>
+        </div>
+        <img class="screen" src="assets/pip/judge.png" width="640" height="480"
+             alt="Violet thinking face, speech bubble reading Let me think, strip reading jdg 9.7s and J.">
+      </article>
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 2</p>
+          <h3>night</h3>
+          <p>Cover the light sensor. The face goes sleepy, a moon lights next to the lux bar,
+            and the agent asks for a bright red LED. The guardrail gives it 40 out of 255 and
+            Pip says so out loud. That is the rule layer overruling the model, on camera.</p>
+          <code class="cmd">curl -X POST http://&lt;brain&gt;:8080/scene -d '{"name":"night"}'</code>
+        </div>
+        <img class="screen" src="assets/pip/night.png" width="640" height="480"
+             alt="Sleepy half-lidded eyes, a moon beside an empty lux bar, bubble reading Rule capped the LED to 40.">
+      </article>
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 3</p>
+          <h3>fallback</h3>
+          <p>The judgment layer is told to skip the Jetson for one answer. The cortex glyph
+            goes grey, <code>mind</code> reads <code>5</code>, and the Pi 5 answers instead.
+            Pull the Jetson's power for the harder version; the screen looks the same.</p>
+          <code class="cmd">curl -X POST http://&lt;brain&gt;:8080/scene -d '{"name":"fallback"}'</code>
+        </div>
+        <img class="screen" src="assets/pip/fallback.png" width="640" height="480"
+             alt="Happy squinting face, status strip with the C glyph dimmed and the mind letter reading 5.">
+      </article>
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 4</p>
+          <h3>fever</h3>
+          <p>A thumb on the RP2350 pushes it past 35 C and the <code>temp.hot</code> rule
+            fires: alert face, amber ground, red LED. Another one with no model anywhere
+            near it.</p>
+          <code class="cmd">curl -X POST http://&lt;brain&gt;:8080/scene -d '{"name":"fever"}'</code>
+        </div>
+        <img class="screen" src="assets/pip/fever.png" width="640" height="480"
+             alt="Wide alert eyes and a small round mouth on an amber ground, strip reading 36C and captioned fever.">
+      </article>
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 5</p>
+          <h3>who</h3>
+          <p>Pip takes a frame off the webcam and says one sentence about what is in front of
+            it. The bubble below is a real answer from 2026-08-23, not a caption somebody
+            wrote for the screenshot.</p>
+          <code class="cmd">curl -X POST http://&lt;brain&gt;:8080/scene -d '{"name":"who"}'</code>
+        </div>
+        <img class="screen" src="assets/pip/who.png" width="640" height="480"
+             alt="Wide open eyes with a waveform glyph at the right, bubble reading The desk in the room has a clock on the wall.">
+      </article>
+
+      <article class="scene">
+        <div>
+          <p class="scene-name">scene 6</p>
+          <h3>tour</h3>
+          <p>Two minutes with nobody at the desk. Pip introduces each part in one sentence,
+            then plays reflex, night and who with every wait staged, and ends on "That's all
+            of me. Press my button any time." The brain boots straight into it with
+            <code>--tour</code>.</p>
+          <code class="cmd">curl -X POST http://&lt;brain&gt;:8080/scene -d '{"name":"tour"}'</code>
+        </div>
+        <img class="screen" src="assets/pip/tour.png" width="640" height="480"
+             alt="Happy face with a speech bubble reading I'm Pip, status strip captioned tour.">
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  NUMBERS  ───────────────────────────── -->
+<section class="section" id="numbers">
+  <div class="wrap">
+    <p class="eyebrow">reflex against judgment</p>
+    <h2 class="h2">What each layer costs</h2>
+    <p class="section-lede">The point of splitting the two is that most of what a companion
+      does never needs a model. Everything below came off the bench on 2026-08-23.</p>
+
+    <div class="tablewrap">
+      <table class="datasheet">
+        <caption class="visually-hidden">Measured latency per path</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="col-metric">Path</th>
+            <th scope="col">Where it runs</th>
+            <th scope="col">Measured</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Press to wink, body on WiFi</th><td>Pi Zero 2 W rule, HTTP both ways</td><td><b>757</b> <i>ms</i></td></tr>
+          <tr><th scope="row">Press to wink, body on the wire</th><td>same rule, one UART frame</td><td class="na">not timed yet</td></tr>
+          <tr><th scope="row">Hold to spoken answer</th><td>Jetson text model, Pi 5 voice</td><td><b>9.8</b> <i>s</i></td></tr>
+          <tr><th scope="row">Microphone window inside that</th><td>whisper base.en, CUDA</td><td><b>4.5</b> <i>s</i></td></tr>
+          <tr><th scope="row">Camera frame to one sentence</th><td>SmolVLM-500M, Jetson</td><td><b>2.6</b> <i>s</i></td></tr>
+          <tr><th scope="row">Text to 1.19 s of speech</th><td>Piper on the Pi 5</td><td><b>194</b> <i>ms</i></td></tr>
+          <tr><th scope="row">Resident memory, three Jetson services</th><td>text model, VLM, cortex</td><td><b>4.09</b> <i>GB</i></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note">The two press numbers are the same rule with a different transport under
+      it. The wire exists to turn a TCP round trip into a rule match plus one framed UART
+      write, and until the bench times it, the honest number on this page is the HTTP one.
+      Method, raw output and the frames on this page live in the
+      <a href="https://github.com/tinyagent-cc/pip">Pip repository</a>.</p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  BUILD IT  ───────────────────────────── -->
+<section class="section section-wash" id="build">
+  <div class="wrap wrap-narrow">
+    <p class="eyebrow">where to start</p>
+    <h2 class="h2">Reading order</h2>
+    <p class="section-lede">Pip is MIT licensed like tiny_agent, and every part of it is
+      documented next to the code that does the work.</p>
+    <ul class="constraints">
+      <li>
+        <p class="c-key">the anatomy</p>
+        <p><a href="https://github.com/tinyagent-cc/pip#anatomy-of-pip">README</a>: the
+        fleet table, the six steps from a press to a wink and from a hold to an answer, and
+        the scene gallery with the command that starts each one.</p>
+      </li>
+      <li>
+        <p class="c-key">the film</p>
+        <p><a href="https://github.com/tinyagent-cc/pip/blob/main/docs/demo-script.md">docs/demo-script.md</a>:
+        four health checks, seven shots in filming order, and a troubleshooting table keyed
+        on what the status strip shows.</p>
+      </li>
+      <li>
+        <p class="c-key">the contracts</p>
+        <p><a href="https://github.com/tinyagent-cc/pip/blob/main/PROTOCOL.md">PROTOCOL.md</a>
+        for the wire and the HTTP routes,
+        <a href="https://github.com/tinyagent-cc/pip/blob/main/brain/README.md">brain/README.md</a>
+        for the endpoints and flags, and
+        <a href="https://github.com/tinyagent-cc/pip/blob/main/services/README.md">services/README.md</a>
+        for the cortex and voice, with the measurements behind every number here.</p>
+      </li>
+      <li>
+        <p class="c-key">the hardware</p>
+        <p><a href="https://github.com/tinyagent-cc/pip/tree/main/hardware">hardware/</a>: the
+        pin table, a pictorial and a WireViz harness, all generated from
+        <code>pins.hpp</code> and checked against it in CI.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <p class="footer-word">tiny_agent</p>
+      <p class="footer-tag">Pip is what the framework looks like when it has a face.</p>
+      <p class="footer-license">MIT licensed. Copyright &copy; 2026 Riadh Haj Amor.
+        <a href="https://github.com/tinyagent-cc/pip/blob/main/LICENSE">Full text</a>.</p>
+    </div>
+    <nav class="footer-nav" aria-label="Pip">
+      <p class="footer-head">Pip</p>
+      <a href="https://github.com/tinyagent-cc/pip">Repository</a>
+      <a href="https://github.com/tinyagent-cc/pip/blob/main/docs/demo-script.md">Demo script</a>
+      <a href="https://github.com/tinyagent-cc/pip/blob/main/PROTOCOL.md">Protocol</a>
+      <a href="https://github.com/tinyagent-cc/pip/tree/main/hardware">Hardware</a>
+    </nav>
+    <nav class="footer-nav" aria-label="tiny_agent">
+      <p class="footer-head">tiny_agent</p>
+      <a href="index.html">Home</a>
+      <a href="https://github.com/tinyagent-cc/tiny_agent">GitHub</a>
+      <a href="https://github.com/tinyagent-cc/tiny_agent/blob/main/docs/benchmarks.md">Benchmarks</a>
+      <a href="index.html#quickstart">Quickstart</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>

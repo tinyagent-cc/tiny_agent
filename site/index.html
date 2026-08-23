@@ -46,6 +46,7 @@
       <a href="#features">Features</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#quickstart">Quickstart</a>
+      <a href="pip.html">Pip</a>
       <a href="#faq">FAQ</a>
       <a class="nav-cta" href="https://github.com/tinyagent-cc/tiny_agent">GitHub</a>
     </nav>
@@ -489,6 +490,35 @@ cmake --build --preset default
   </div>
 </section>
 
+<!-- ─────────────────────────────  PIP  ───────────────────────────── -->
+<section class="section section-wash" id="pip">
+  <div class="wrap">
+    <p class="eyebrow">built with it</p>
+    <h2 class="h2">Pip, a desk companion</h2>
+    <article class="card card-lead">
+      <div class="lead-copy">
+        <h3>Reflexes on one board, judgment on another</h3>
+        <p>Press Pip's button and it winks before you let go, because that is a Rete rule on
+        a Pi Zero 2 W spending no tokens. Hold the button and a tiny_agent loop on a Jetson
+        listens, looks through a webcam if it needs to, and answers out loud through a Pi 5.
+        Measured on the bench: 9.8 s from a held button to a spoken sentence.</p>
+        <p>The status strip along the bottom of the 320x240 face carries what the last rule
+        cost, what the last model call cost, and which of the two models answered. Kill the
+        Jetson and one letter changes.</p>
+        <p class="actions"><a class="btn btn-primary" href="pip.html">See Pip</a></p>
+      </div>
+      <div class="lead-art">
+        <img src="assets/pip/judge.png" width="640" height="480"
+             style="display:block;width:100%;height:auto;border-radius:8px;image-rendering:pixelated"
+             alt="Pip's screen: a thinking face over a speech bubble reading Let me think, above a status strip reading judge, 22C, jdg 9.7s.">
+        <p class="tree-cap">The screen, rendered from the same C++ the Pico runs. Four
+          boards, one job each, all of it in the
+          <a href="https://github.com/tinyagent-cc/pip">Pip repository</a>.</p>
+      </div>
+    </article>
+  </div>
+</section>
+
 </main>
 
 <footer class="footer">
@@ -504,6 +534,7 @@ cmake --build --preset default
       <a href="https://github.com/tinyagent-cc/tiny_agent">GitHub</a>
       <a href="https://github.com/tinyagent-cc/tiny_agent/blob/main/README.md">README</a>
       <a href="https://github.com/tinyagent-cc/tiny_agent/tree/main/examples">Examples</a>
+      <a href="pip.html">Pip, the desk companion</a>
       <a href="https://github.com/tinyagent-cc/tiny_agent/blob/main/CONTRIBUTING.md">Contributing</a>
     </nav>
     <nav class="footer-nav" aria-label="Documentation">
