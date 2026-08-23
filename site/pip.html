@@ -105,7 +105,7 @@
 
     <div class="pip-hero-art rise" data-rise="3">
       <img class="screen" src="assets/pip/judge.png" width="640" height="480"
-           alt="Pip's screen: a violet thinking face over a speech bubble reading Let me think, and a status strip reading judge, 22C, jdg 9.7s, with the letters W F B C J.">
+           alt="Pip's screen: a violet thinking face over a speech bubble reading Let me think, and a status strip reading judge, 22C, jdg 3.2s, with the letters W F B C J.">
       <p class="screen-cap">320x240 on the panel, rendered from the same C++ the Pico runs.
         The bottom strip is the argument: <b>rfx</b> what the last rule cost,
         <b>jdg</b> what the last model call cost, and <b>J</b> or <b>5</b> for which model
@@ -123,7 +123,7 @@
         </div>
         <div class="spec">
           <p class="spec-key">hold to spoken answer</p>
-          <p class="spec-val">9.8<span class="unit">s</span></p>
+          <p class="spec-val">9.0<span class="unit">s</span></p>
           <p class="spec-src">four of them the microphone window, Jetson Orin Nano</p>
         </div>
         <div class="spec">
@@ -215,13 +215,13 @@
           <p class="scene-name">scene 1, second beat</p>
           <h3>judgment</h3>
           <p>Hold the button and ask something out loud. Listening face, then thinking, then
-            the answer arrives spoken with the same words in the bubble. 9.8 s end to end on
+            the answer arrives spoken with the same words in the bubble. 9.0 s end to end on
             2026-08-23, and the HUD carries both the time and the <code>J</code> that says
             the Jetson answered.</p>
           <code class="cmd">curl -s http://&lt;brain&gt;:8080/log?n=30</code>
         </div>
         <img class="screen" src="assets/pip/judge.png" width="640" height="480"
-             alt="Violet thinking face, speech bubble reading Let me think, strip reading jdg 9.7s and J.">
+             alt="Violet thinking face, speech bubble reading Let me think, strip reading jdg 3.2s and J.">
       </article>
 
       <article class="scene">
@@ -314,8 +314,8 @@
         </thead>
         <tbody>
           <tr><th scope="row">Press to wink, body on WiFi</th><td>Pi Zero 2 W rule, HTTP both ways</td><td><b>757</b> <i>ms</i></td></tr>
-          <tr><th scope="row">Press to wink, body on the wire</th><td>same rule, one UART frame</td><td class="na">not timed yet</td></tr>
-          <tr><th scope="row">Hold to spoken answer</th><td>Jetson text model, Pi 5 voice</td><td><b>9.8</b> <i>s</i></td></tr>
+          <tr><th scope="row">Press to wink, body on the wire</th><td>same rule, one UART frame</td><td><b>114</b> <i>µs</i></td></tr>
+          <tr><th scope="row">Hold to spoken answer</th><td>Jetson text model, Pi 5 voice</td><td><b>9.0</b> <i>s</i></td></tr>
           <tr><th scope="row">Microphone window inside that</th><td>whisper base.en, CUDA</td><td><b>4.5</b> <i>s</i></td></tr>
           <tr><th scope="row">Camera frame to one sentence</th><td>SmolVLM-500M, Jetson</td><td><b>2.6</b> <i>s</i></td></tr>
           <tr><th scope="row">Text to 1.19 s of speech</th><td>Piper on the Pi 5</td><td><b>194</b> <i>ms</i></td></tr>
@@ -325,8 +325,9 @@
     </div>
 
     <p class="note">The two press numbers are the same rule with a different transport under
-      it. The wire exists to turn a TCP round trip into a rule match plus one framed UART
-      write, and until the bench times it, the honest number on this page is the HTTP one.
+      it. The wire turns a TCP round trip into a rule match plus one framed UART write:
+      114 µs is the median rule time over the 2026-08-23 acceptance run (105 to 165 µs),
+      and the whole event, rule included, stays under 330 µs at the brain.
       Method, raw output and the frames on this page live in the
       <a href="https://github.com/tinyagent-cc/pip">Pip repository</a>.</p>
   </div>
