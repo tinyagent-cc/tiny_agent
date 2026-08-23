@@ -172,7 +172,8 @@
         <p class="role">cortex</p>
         <h3>Jetson Orin Nano</h3>
         <p>Ears and eyes: whisper.cpp on CUDA for the microphone, a small VLM for the
-          camera, and Qwen2.5-3B-Instruct for the judgment itself. All three resident at
+          camera, and Qwen3-4B-Instruct-2507 for the judgment itself (a dial, not a
+          constant: <code>pip-llm</code> swaps in the thinking variant or the older 3B). All three resident at
           once.</p>
       </article>
       <article class="card">
@@ -290,6 +291,26 @@
              alt="Happy face with a speech bubble reading I'm Pip, status strip captioned tour.">
       </article>
 
+    </div>
+  </div>
+</section>
+
+<!-- ──────────────────────────  CONVERSATION  ─────────────────────────── -->
+<section class="section" id="conversation">
+  <div class="wrap">
+    <p class="eyebrow">beyond the scenes</p>
+    <h2 class="h2">It holds a conversation</h2>
+    <p class="section-lede">Four things landed on 2026-08-23 that no scene captures:</p>
+    <div class="tablewrap">
+      <table class="datasheet">
+        <caption class="visually-hidden">Conversation capabilities</caption>
+        <tbody>
+          <tr><th scope="row">Memory</th><td>the last four exchanges ride into every prompt, so "what did I just ask you?" comes back right</td></tr>
+          <tr><th scope="row">The web</th><td>a <code>search</code> tool (DuckDuckGo through the cortex) answers anything after the model's training; "latest OpenShift?" came back "4.22" in 8.5 s</td></tr>
+          <tr><th scope="row">Three languages</th><td>whisper auto-detects English, French or Arabic and the Pi 5 answers in the matching Piper voice</td></tr>
+          <tr><th scope="row">A model dial</th><td>Qwen3-4B-Instruct answers in seconds; <code>pip-llm qwen3-4b-thinking</code> trades 32 s of silent reasoning for a three-step riddle solved</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
